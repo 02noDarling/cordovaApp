@@ -1,0 +1,2336 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TypeScript HTML App</title>
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+    }
+    html, body {
+      overflow: hidden;
+      margin: 0;
+      font-family: Arial, sans-serif;
+      padding-top: constant(safe-area-inset-top);
+      padding-top: env(safe-area-inset-top);
+    }
+    html {
+      overscroll-behavior-x: none;
+      touch-action: none;
+      background-color: white !important;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - env(safe-area-inset-top));
+      height: calc(100vh - constant(safe-area-inset-top));
+      background: transparent;
+      margin-top: 0 !important;
+      padding-top: 0 !important;
+      top: 0 !important;
+    }
+    
+    /* Live2D 容器 */
+    #live2d-container {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 425px; /* 为Live2D预留空间 */
+    }
+    
+    body > canvas:only-child {
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* 拖拽图标 */
+    #drag-handle {
+      position: absolute;
+      right: -5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 40px;
+      height: 100px;
+      background: rgba(100, 100, 100, 0.6);
+      border-radius: 10px 0 0 10px;
+      cursor: move;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: background 0.2s, opacity 0.2s;
+      opacity: 0;
+    }
+
+    /* 收拢按钮 */
+    #collapse-button {
+      position: absolute;
+      left: -5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 40px;
+      height: 80px;
+      background: rgba(76, 175, 80, 0.6);
+      border-radius: 0 10px 10px 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: background 0.2s, opacity 0.2s;
+      opacity: 0;
+      color: white;
+      font-size: 16px;
+    }
+
+    #collapse-button:hover {
+      background: rgba(76, 175, 80, 0.8);
+    }
+
+    /* 鼠标进入窗口区域时显示按钮 */
+    #hover-detector:hover ~ #drag-handle,
+    #drag-handle:hover,
+    #hover-detector:hover ~ #collapse-button,
+    #collapse-button:hover {
+      opacity: 1;
+    }
+
+    /* 左上角关闭按钮 */
+    #close-button {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 50px;
+      height: 50px;
+      cursor: pointer;
+      z-index: 1000;
+      background: rgba(255, 0, 0, 0.6);
+      color: white;
+      font-size: 20px;
+      text-align: center;
+      line-height: 50px;
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    /* 鼠标进入窗口区域时显示关闭按钮 */
+    #hover-detector:hover ~ #close-button,
+    #close-button:hover {
+      opacity: 1;
+    }
+
+    /* 左下角缩放按钮 */
+    #resize-handle {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 50px;
+      height: 50px;
+      cursor: nwse-resize;
+      z-index: 1000;
+      background: rgba(100, 100, 100, 0.6);
+      color: white;
+      font-size: 20px;
+      text-align: center;
+      line-height: 50px;
+      border-radius: 0 50% 0 0;
+      opacity: 0;
+      transition: opacity 0.2s ease-in-out, background 0.2s;
+    }
+
+    #resize-handle:hover {
+      background: rgba(100, 100, 100, 0.8);
+    }
+
+    /* 鼠标进入窗口区域时显示缩放按钮 */
+    #hover-detector:hover ~ #resize-handle,
+    #resize-handle:hover {
+      opacity: 1;
+    }
+    
+    /* 底部聊天区域 */
+    #bottom-container {
+      width: 100%;
+      height: 325px;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 15px 15px 0 0;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+      display: flex;
+      box-sizing: border-box;
+    }
+    
+    /* 会话列表 */
+    #sessions-panel {
+      width: 200px;
+      background: rgba(240, 240, 240, 0.9);
+      border-radius: 15px 0 0 0;
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      box-sizing: border-box;
+      border-right: 1px solid rgba(200, 200, 200, 0.5);
+    }
+    
+    /* 新建会话按钮 */
+    #new-chat-button {
+      padding: 8px 12px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-bottom: 10px;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    
+    #new-chat-button:hover {
+      background: #45a049;
+    }
+    
+    /* 会话列表容器 */
+    #sessions-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    
+    /* 会话项 */
+    .session-item {
+      position: relative;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.2s;
+      word-wrap: break-word;
+      line-height: 1.3;
+      border: 2px solid transparent;
+    }
+    
+    .session-item:hover {
+      background: rgba(255, 255, 255, 1);
+    }
+    
+    .session-item.active {
+      background: rgba(76, 175, 80, 0.2);
+      border-color: #4CAF50;
+    }
+    
+    /* 会话菜单按钮 */
+    .session-menu-btn {
+      position: absolute;
+      right: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      background: rgba(100, 100, 100, 0.6);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    .session-item:hover .session-menu-btn {
+      display: flex;
+    }
+    
+    .session-menu-btn:hover {
+      background: rgba(100, 100, 100, 0.8);
+    }
+    
+    /* 下拉菜单 */
+    .dropdown-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      z-index: 1001;
+      min-width: 80px;
+      display: none;
+    }
+    
+    .dropdown-menu.show {
+      display: block;
+    }
+    
+    .dropdown-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #333;
+      transition: background 0.2s;
+    }
+    
+    .dropdown-item:hover {
+      background: #f5f5f5;
+    }
+    
+    .dropdown-item.delete {
+      color: #e53e3e;
+    }
+    
+    .dropdown-item.delete:hover {
+      background: #fff5f5;
+    }
+    
+    /* 聊天框容器 */
+    #chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 15px;
+      box-sizing: border-box;
+    }
+    
+    /* 聊天消息显示区域 */
+    #chat-messages {
+      flex: 1;
+      background: rgba(245, 245, 245, 0.8);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      overflow-y: auto;
+      min-height: 80px;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    /* 输入区域 */
+    #chat-input-container {
+      display: flex;
+      gap: 6px; /* 减少间距 */
+      align-items: flex-end;
+      padding-right: 8px; /* 添加右边距确保按钮可见 */
+    }
+    
+    /* 新增：输入框包装器 */
+    #input-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      min-width: 0; /* 确保flex收缩 */
+    }
+
+    /* 修改输入框为textarea并添加样式 */
+    #chat-input {
+      flex: 1;
+      padding: 8px 12px 35px 12px; /* 底部留出空间给上传按钮 */
+      border: 2px solid #ddd;
+      border-radius: 20px;
+      outline: none;
+      font-size: 14px;
+      transition: border-color 0.2s;
+      resize: none;
+      overflow-y: auto;
+      min-height: 40px;
+      max-height: 120px; /* 减少最大高度 */
+      line-height: 1.4;
+      font-family: Arial, sans-serif;
+      box-sizing: border-box;
+      width: 100%; /* 确保全宽 */
+    }
+    
+    #chat-input:focus {
+      border-color: #4CAF50;
+    }
+    
+    /* 文件上传按钮嵌入样式 */
+    #file-upload-button {
+      position: absolute;
+      left: 8px;
+      bottom: 4px;
+      width: 24px;
+      height: 24px;
+      background: rgba(245, 245, 245, 0.9);
+      border: 1px solid rgba(200, 200, 200, 0.8);
+      border-radius: 50%;
+      color: #666;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      z-index: 10;
+      font-size: 14px;
+      backdrop-filter: blur(2px); /* 添加模糊背景效果 */
+    }
+
+    #file-upload-button:hover {
+      background: rgba(225, 225, 225, 0.95);
+      color: #2196F3;
+      border-color: #2196F3;
+      transform: scale(1.1);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    #file-upload-button:active {
+      transform: scale(0.95);
+    }
+
+    /* 当输入框聚焦时，上传按钮样式变化 */
+    #chat-input:focus ~ #file-upload-button {
+      background: rgba(76, 175, 80, 0.1);
+      border-color: #4CAF50;
+      color: #4CAF50;
+    }
+    
+    /* 添加提示文本 */
+    .input-hint {
+      position: absolute;
+      bottom: 50px;
+      right: 115px; /* 增加距离，为新按钮让出空间 */
+      font-size: 12px;
+      color: #888;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 2px 8px;
+      border-radius: 10px;
+      pointer-events: none;
+    }
+    
+    #send-button {
+      width: 36px;  /* 统一减小按钮尺寸 */
+      height: 36px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, transform 0.1s;
+      font-size: 14px; /* 统一字体大小 */
+      flex-shrink: 0; /* 防止按钮被压缩 */
+    }
+    
+    #send-button:hover {
+      background: #45a049;
+    }
+    
+    #send-button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    #mic-button {
+      width: 36px;  /* 统一减小按钮尺寸 */
+      height: 36px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, transform 0.1s;
+      font-size: 14px; /* 统一字体大小 */
+      flex-shrink: 0; /* 防止按钮被压缩 */
+    }
+    
+    #mic-button:hover {
+      background: #45a049;
+    }
+    
+    #mic-button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    /* 加载动画 */
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #4CAF50;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .message {
+      margin-bottom: 8px;
+      padding: 8px;
+      border-radius: 8px;
+    }
+    
+    .user-message {
+      background: #e3f2fd;
+      text-align: right;
+      margin-left: 20px;
+    }
+    
+    .bot-message {
+      background: #f1f8e9;
+      margin-right: 20px;
+    }
+    
+    /* 滚动条样式 */
+    #sessions-list::-webkit-scrollbar,
+    #chat-messages::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    #sessions-list::-webkit-scrollbar-track,
+    #chat-messages::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 3px;
+    }
+    
+    #sessions-list::-webkit-scrollbar-thumb,
+    #chat-messages::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 3px;
+    }
+    
+    #sessions-list::-webkit-scrollbar-thumb:hover,
+    #chat-messages::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    /* 新增麦克风按钮样式 */
+    #voice-toggle-button {
+      width: 36px;  /* 统一减小按钮尺寸 */
+      height: 36px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, transform 0.1s;
+      font-size: 14px; /* 统一字体大小 */
+      flex-shrink: 0; /* 防止按钮被压缩 */
+    }
+
+    #voice-toggle-button:hover {
+      background: #45a049;
+    }
+
+    #voice-toggle-button.disabled {
+      background: #f44336;
+    }
+
+    #voice-toggle-button.disabled:hover {
+      background: #d32f2f;
+    }
+
+    /* 上传文件显示区域 */
+    #uploaded-files-container {
+      background: rgba(245, 245, 245, 0.8);
+      border-radius: 8px;
+      padding: 8px;
+      border: 1px solid rgba(200, 200, 200, 0.5);
+    }
+
+    #uploaded-files-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    /* 文件项样式 */
+    .file-item {
+      position: relative;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 20px 6px 8px; /* 右边留空间给删除按钮 */
+      font-size: 12px;
+      max-width: 150px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .file-item .file-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      color: #333;
+    }
+
+    .file-remove-btn {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 16px;
+      height: 16px;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      transition: all 0.2s;
+    }
+
+    .file-remove-btn:hover {
+      background: #d32f2f;
+      transform: scale(1.1);
+    }
+
+    /* 文件列表滚动条样式 */
+    #uploaded-files-list::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+
+    #uploaded-files-list::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 2px;
+    }
+
+    #uploaded-files-list::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 2px;
+    }
+
+     /* 移动端适配 */
+     @media (max-width: 768px) {
+      #sessions-panel {
+        width: 120px; /* 减小侧边栏宽度 */
+        padding: 8px;
+      }
+      
+      #chat-container {
+        padding: 10px; /* 减小内边距 */
+      }
+      
+      #chat-input-container {
+        gap: 6px; /* 进一步减小间距 */
+        padding-right: 8px; /* 增加右边距确保按钮可见 */
+      }
+      
+      #mic-button, #voice-toggle-button, #send-button {
+        width: 32px; /* 移动端按钮更小 */
+        height: 32px;
+        font-size: 12px;
+      }
+      
+      #chat-input {
+        max-height: 100px; /* 移动端输入框高度限制 */
+        padding-right: 8px; /* 确保文字不被按钮遮盖 */
+      }
+      
+      .message {
+        margin-left: 10px;
+        margin-right: 10px;
+        font-size: 13px;
+      }
+      
+      .user-message {
+        margin-left: 30px;
+      }
+      
+      .bot-message {
+        margin-right: 30px;
+      }
+    }
+
+    /* 超小屏幕适配 */
+    @media (max-width: 480px) {
+      #bottom-container {
+        height: 280px; /* 减小整体高度 */
+      }
+      
+      #sessions-panel {
+        width: 100px;
+        padding: 5px;
+      }
+      
+      #new-chat-button {
+        font-size: 10px;
+        padding: 6px 8px;
+      }
+      
+      .session-item {
+        font-size: 10px;
+        padding: 6px 8px;
+      }
+      
+      #chat-container {
+        padding: 8px;
+      }
+      
+      #chat-input-container {
+        gap: 4px;
+        padding-right: 10px;
+      }
+      
+      #mic-button, #voice-toggle-button, #send-button {
+        width: 28px;
+        height: 28px;
+        font-size: 11px;
+      }
+    }
+  </style>
+  <!-- Live2DCubismCore script -->
+  <script src="./Core/live2dcubismcore.js"></script>
+  <!-- Build script -->
+  <script type="module" crossorigin src="/assets/index-BdKM-sSx.js"></script>
+  <script src="cordova.js"></script>
+</head>
+<body>
+  <!-- 全窗口鼠标检测层 -->
+  <div id="hover-detector" style="
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 999;
+  "></div>
+
+  <div id="live2d-container">
+    <!-- Live2D canvas 会被插入到这里 -->
+    <!-- <div id="drag-handle"></div>
+    <div id="collapse-button">«</div> -->
+  </div>
+  
+  <!-- <div id="close-button">×</div> -->
+  <!-- <div id="resize-handle">↔↕</div> -->
+
+  <div id="bottom-container">
+    <!-- 会话列表面板 -->
+    <div id="sessions-panel">
+      <button id="new-chat-button">
+        <span>+</span>
+        <span>新对话</span>
+      </button>
+      <div id="sessions-list">
+        <!-- 会话列表项将在这里动态添加 -->
+      </div>
+    </div>
+    
+    <!-- 聊天区域 -->
+    <div id="chat-container">
+      <div id="chat-messages">
+        <div class="message bot-message">你好！我是02，有什么想聊的吗？</div>
+      </div>
+      <!-- 添加这个文件显示区域 -->
+      <div id="uploaded-files-container" style="display: none; margin-bottom: 10px;">
+        <div id="uploaded-files-list"></div>
+      </div>
+      <!-- 原聊天输入区 -->
+      <div id="chat-input-container">
+        <div id="input-wrapper">
+          <textarea id="chat-input" placeholder="输入消息..." rows="1"></textarea>
+          <button id="file-upload-button" title="上传文件">
+            <span style="font-size: 16px;">+</span>
+          </button>
+          <input type="file" id="file-input" multiple accept=".txt,.png,.jpg,.jpeg,.gif,.pdf,.doc,.docx" style="display: none;">
+        </div>
+        <button id="mic-button" title="点击开始录音"><span>🎙️</span></button>
+        <button id="voice-toggle-button" title="语音播放控制"><span id="voice-icon">🔊</span></button>
+        <button id="send-button"><span>→</span></button>
+      </div>
+
+      <!-- 录音界面 -->
+      <div id="recording-container" style="display:none; flex-direction:column; align-items:center; justify-content:center; width:100%;">
+        <canvas id="waveform" style="width:100%; height:60px;"></canvas>
+        <button id="stop-recording" style="margin-top:10px; padding:5px 15px;">结束录音</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // const { ipcRenderer } = require('electron');
+    
+    // 全局变量
+    let currentSessionId = null;
+    let sessions = [];
+    let isVoiceEnabled = true; // 新增：语音控制变量
+    
+    // 会话管理功能
+    const newChatButton = document.getElementById('new-chat-button');
+    const sessionsList = document.getElementById('sessions-list');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-button');
+
+    document.addEventListener('deviceready', () => {
+      if (window.StatusBar) {
+        StatusBar.overlaysWebView(false);
+        StatusBar.backgroundColorByHexString('#ffffff'); // 改成白色或你想要的颜色
+        StatusBar.styleDefault(); // 或者 StatusBar.styleLightContent()
+      }
+      
+      // 强制隐藏系统UI
+      if (window.AndroidFullScreen) {
+        AndroidFullScreen.showSystemUI();
+      }
+
+      // 文件系统相关代码
+      console.log(window.cordova.file.dataDirectory);
+
+      // 初始化会话
+      initSessions();
+      
+      // 初始化语音控制（新增）
+      initVoiceControl();
+
+      initFileUpload(); // 添加这行
+    });
+    
+    // 新增：语音控制功能
+    function initVoiceControl() {
+      const voiceToggleButton = document.getElementById('voice-toggle-button');
+      const voiceIcon = document.getElementById('voice-icon');
+      
+      if (!voiceToggleButton || !voiceIcon) {
+        console.error('Voice control elements not found');
+        return;
+      }
+      
+      // 更新麦克风按钮状态
+      function updateVoiceButtonState() {
+        if (isVoiceEnabled) {
+          voiceToggleButton.classList.remove('disabled');
+          voiceToggleButton.title = '语音播放已启用，点击禁用';
+          voiceIcon.textContent = '🔊';
+        } else {
+          voiceToggleButton.classList.add('disabled');
+          voiceToggleButton.title = '语音播放已禁用，点击启用';
+          voiceIcon.textContent = '🚫';
+        }
+      }
+
+      // 同步外部JS文件中的全局变量
+      function syncExternalGlobalVariable() {
+        try {
+          // 方法1: 直接访问全局变量（如果在同一个window作用域）
+          if (typeof window._isAudioEnabled !== 'undefined') {
+            window._isAudioEnabled = isVoiceEnabled;
+            console.log('Updated _isAudioEnabled via window:', window._isAudioEnabled);
+          }
+          
+        } catch (error) {
+          console.warn('Failed to sync external global variable:', error);
+        }
+      }
+      
+      // 麦克风按钮点击事件
+      voiceToggleButton.addEventListener('click', () => {
+        isVoiceEnabled = !isVoiceEnabled;
+        updateVoiceButtonState();
+        syncExternalGlobalVariable();
+      });
+      
+      // 初始化按钮状态
+      updateVoiceButtonState();
+      syncExternalGlobalVariable();
+    }
+    
+    // 初始化会话列表
+    async function initSessions() {
+      try {
+        sessions = await getAllSessions();
+        if (sessions.length === 0) {
+          // 如果没有会话，创建一个新的
+          await createNewSession();
+        } else {
+          // 选择最新的会话
+          currentSessionId = sessions[0].id;
+          await loadSessionHistory(currentSessionId);
+        }
+        renderSessionsList();
+      } catch (error) {
+        console.error('Failed to initialize sessions:', error);
+        await createNewSession();
+      }
+    }
+
+    function getAllSessions() {
+      return new Promise((resolve, reject) => {
+        window.resolveLocalFileSystemURL(cordova.file.dataDirectory + 'chat_history/', (dirEntry) => {
+          let directoryReader = dirEntry.createReader();
+          directoryReader.readEntries((entries) => {
+            const sessionPromises = entries
+              .filter(entry => entry.isFile && entry.name.endsWith('.jsonl'))
+              .map(entry => {
+                return new Promise((resolveSession) => {
+                  entry.file((file) => {
+                    const reader = new FileReader();
+                    reader.onloadend = function () {
+                      const sessionId = entry.name.replace('.jsonl', '');
+                      let sessionName = sessionId;
+                      try {
+                        const content = this.result;
+                        const lines = content.trim().split('\n').filter(line => line.trim());
+                        if (lines.length > 0) {
+                          const firstMessage = JSON.parse(lines[0]);
+                          if (firstMessage.role === 'user') {
+                            sessionName = firstMessage.content.substring(0, 20) + (firstMessage.content.length > 20 ? '...' : '');
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error reading session file:', error);
+                      }
+                      resolveSession({
+                        id: sessionId,
+                        name: sessionName,
+                        createdAt: file.lastModifiedDate || new Date(),
+                        modifiedAt: file.lastModifiedDate || new Date()
+                      });
+                    };
+                    reader.onerror = () => resolveSession({ id: entry.name.replace('.jsonl', ''), name: entry.name, createdAt: new Date(), modifiedAt: new Date() });
+                    reader.readAsText(file);
+                  }, (error) => {
+                    console.error('Error getting file:', error);
+                    resolveSession({ id: entry.name.replace('.jsonl', ''), name: entry.name, createdAt: new Date(), modifiedAt: new Date() });
+                  });
+                });
+              });
+
+            Promise.all(sessionPromises)
+              .then(sessions => {
+                resolve(sessions.sort((a, b) => b.modifiedAt - a.modifiedAt));
+              })
+              .catch(reject);
+          }, reject);
+        }, (error) => {
+          console.error('Error accessing chat_history directory:', error);
+          // 如果目录不存在，创建它
+          window.resolveLocalFileSystemURL(cordova.file.dataDirectory, (dirEntry) => {
+            dirEntry.getDirectory('chat_history', { create: true }, () => {
+              console.log('chat_history directory created');
+              resolve([]); // 目录创建后返回空会话列表
+            }, reject);
+          }, reject);
+        });
+      });
+    }
+
+    // 生成新的会话ID
+    function generateSessionId() {
+      return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    async function createNewSession() {
+      const sessionId = generateSessionId();
+      console.log('Session ID:', sessionId);
+
+      // 访问 dataDirectory
+      window.resolveLocalFileSystemURL(cordova.file.dataDirectory, function (dirEntry) {
+        console.log("dataDirectory 路径:", dirEntry.fullPath); // 打印目录路径
+        console.log("dataDirectory 路径 (toURL):", dirEntry.toURL());
+
+        // 创建或访问 chat_history 子目录
+        dirEntry.getDirectory('chat_history', { create: true, exclusive: false }, function (chatDirEntry) {
+          console.log("chat_history 目录路径:", chatDirEntry.fullPath); // 打印 chat_history 路径
+
+          // 在 chat_history 目录中创建文件
+          chatDirEntry.getFile(sessionId + ".jsonl", { create: true, exclusive: false }, function (fileEntry) {
+            console.log("新建会话文件:", fileEntry.fullPath); // 应为 /chat_history/sessionId.jsonl
+
+            // 更新内存里的 session 列表
+            const newSession = {
+              id: sessionId,
+              name: `新对话 ${new Date().toLocaleString()}`,
+              createdAt: new Date(),
+              modifiedAt: new Date()
+            };
+            sessions.unshift(newSession);
+            currentSessionId = newSession.id;
+            clearChatMessages();
+            addMessage("你好！我是02，有什么想聊的吗？", false);
+            renderSessionsList();
+          }, function (error) {
+            console.error("创建文件失败:", error);
+          });
+        }, function (error) {
+          console.error("创建 chat_history 目录失败:", error);
+        });
+      }, function (error) {
+        console.error("访问 dataDirectory 失败:", error);
+      });
+    }
+    
+    // 渲染会话列表
+    function renderSessionsList() {
+      sessionsList.innerHTML = '';
+      sessions.forEach(session => {
+        const sessionItem = document.createElement('div');
+        sessionItem.className = `session-item ${session.id === currentSessionId ? 'active' : ''}`;
+        sessionItem.innerHTML = `
+          <div style="padding-right: 25px;">${session.name}</div>
+          <button class="session-menu-btn" data-session-id="${session.id}">⋯</button>
+          <div class="dropdown-menu">
+            <div class="dropdown-item delete" data-action="delete" data-session-id="${session.id}">删除</div>
+          </div>
+        `;
+        
+        // 点击会话切换
+        sessionItem.addEventListener('click', (e) => {
+          if (!e.target.classList.contains('session-menu-btn') && !e.target.classList.contains('dropdown-item')) {
+            switchToSession(session.id);
+          }
+        });
+        
+        sessionsList.appendChild(sessionItem);
+      });
+      
+      // 添加会话菜单事件监听
+      setupSessionMenus();
+    }
+    
+    // 设置会话菜单事件
+    function setupSessionMenus() {
+      const menuButtons = document.querySelectorAll('.session-menu-btn');
+      const dropdownMenus = document.querySelectorAll('.dropdown-menu');
+      
+      menuButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const dropdown = button.nextElementSibling;
+          
+          // 关闭其他下拉菜单
+          dropdownMenus.forEach(menu => {
+            if (menu !== dropdown) {
+              menu.classList.remove('show');
+            }
+          });
+          
+          // 切换当前下拉菜单
+          dropdown.classList.toggle('show');
+        });
+      });
+      
+      // 点击下拉菜单项
+      const dropdownItems = document.querySelectorAll('.dropdown-item');
+      dropdownItems.forEach(item => {
+        item.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const action = item.dataset.action;
+          const sessionId = item.dataset.sessionId;
+          
+          if (action === 'delete') {
+            await deleteSession(sessionId);
+          }
+          
+          // 关闭下拉菜单
+          item.closest('.dropdown-menu').classList.remove('show');
+        });
+      });
+      
+      // 点击其他地方关闭下拉菜单
+      document.addEventListener('click', () => {
+        dropdownMenus.forEach(menu => {
+          menu.classList.remove('show');
+        });
+      });
+    }
+    
+    // 切换到指定会话
+    async function switchToSession(sessionId) {
+      if (currentSessionId === sessionId) return;
+      
+      currentSessionId = sessionId;
+      await loadSessionHistory(sessionId);
+      renderSessionsList();
+    }
+    
+    // 加载会话历史
+    async function loadSessionHistory(sessionId) {
+      try {
+        // const history = await ipcRenderer.invoke('get-session-history', sessionId);
+        const history = await getSessionHistory(sessionId); // 获取会话历史
+        clearChatMessages();
+        
+        if (history.length === 0) {
+          addMessage('你好！我是02，有什么想聊的吗？', false);
+        } else {
+          history.forEach(message => {
+            addMessage(message.content, message.role === 'user', message.wav_path || '', message.files_path);
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load session history:', error);
+        clearChatMessages();
+        addMessage('你好！我是02，有什么想聊的吗？', false);
+      }
+    }
+
+    function getSessionHistory(sessionId) {
+      return new Promise((resolve, reject) => {
+        const filePath = cordova.file.dataDirectory + 'chat_history/' + sessionId + '.jsonl';
+        window.resolveLocalFileSystemURL(filePath, (fileEntry) => {
+          fileEntry.file((file) => {
+            const reader = new FileReader();
+            reader.onloadend = function () {
+              try {
+                const content = this.result;
+                const lines = content.trim().split('\n').filter(line => line.trim());
+                const history = lines.map(line => JSON.parse(line));
+                resolve(history);
+              } catch (error) {
+                console.error('Error parsing session history:', error);
+                resolve([]); // 解析失败返回空数组
+              }
+            };
+            reader.onerror = () => {
+              console.error('Error reading file:', reader.error);
+              resolve([]); // 读取失败返回空数组
+            };
+            reader.readAsText(file);
+          }, (error) => {
+            console.error('Error getting file:', error);
+            resolve([]); // 文件不存在或无法访问返回空数组
+          });
+        }, (error) => {
+          console.error('Error accessing file path:', error);
+          resolve([]); // 路径无效或文件不存在返回空数组
+        });
+      });
+    }
+    
+    // 删除会话
+    async function deleteSession(sessionId) {
+      if (sessions.length <= 1) {
+        await showCustomAlertDialog('至少需要保留一个会话');
+        return;
+      }
+      
+      const shouldDelete = await showCustomConfirmDialog('确定要删除这个会话吗？');
+      if (!shouldDelete) return;
+      
+      try {
+        // const success = await ipcRenderer.invoke('delete-session', sessionId);
+        const success = await deleteSessionFiles(sessionId); // 删除文件和目录
+        if (success) {
+          sessions = sessions.filter(s => s.id !== sessionId);
+          
+          if (currentSessionId === sessionId) {
+            if (sessions.length > 0) {
+              currentSessionId = sessions[0].id;
+              await loadSessionHistory(currentSessionId);
+            } else {
+              await createNewSession();
+            }
+          }
+          
+          renderSessionsList();
+        }
+        
+        // 确保操作完成后重新聚焦输入框
+        setTimeout(() => {
+          chatInput.focus();
+        }, 100);
+      } catch (error) {
+        console.error('Failed to delete session:', error);
+        await showCustomAlertDialog('删除会话失败');
+        chatInput.focus();
+      }
+    }
+
+    // 删除会话相关文件和目录
+    function deleteSessionFiles(sessionId) {
+      return new Promise((resolve, reject) => {
+        // 定义文件和目录路径
+        const historyPath = cordova.file.dataDirectory + 'chat_history/' + sessionId + '.jsonl';
+        const wavPath = cordova.file.dataDirectory + 'chat_wav/' + sessionId; // 假设 wav 目录
+        const filesPath = cordova.file.dataDirectory + 'chat_files/' + sessionId; // 假设 files 目录
+
+        // 计数器，确保所有删除操作完成
+        let pendingDeletions = 3; // history, wav, files
+        let hasError = false;
+
+        function checkComplete() {
+          pendingDeletions--;
+          if (pendingDeletions === 0) {
+            resolve(!hasError);
+          }
+        }
+
+        // 删除历史文件
+        window.resolveLocalFileSystemURL(historyPath, (fileEntry) => {
+          fileEntry.remove(() => {
+            console.log('History file deleted:', historyPath);
+            checkComplete();
+          }, (error) => {
+            console.warn('History file not found or failed to delete:', error);
+            checkComplete();
+          });
+        }, (error) => {
+          console.warn('History file path invalid:', error);
+          checkComplete();
+        });
+
+        // 删除 wav 目录
+        window.resolveLocalFileSystemURL(wavPath, (dirEntry) => {
+          dirEntry.removeRecursively(() => {
+            console.log('Wav directory deleted:', wavPath);
+            checkComplete();
+          }, (error) => {
+            console.warn('Wav directory not found or failed to delete:', error);
+            checkComplete();
+          });
+        }, (error) => {
+          console.warn('Wav directory path invalid:', error);
+          checkComplete();
+        });
+
+        // 删除 files 目录
+        window.resolveLocalFileSystemURL(filesPath, (dirEntry) => {
+          dirEntry.removeRecursively(() => {
+            console.log('Files directory deleted:', filesPath);
+            checkComplete();
+          }, (error) => {
+            console.warn('Files directory not found or failed to delete:', error);
+            checkComplete();
+          });
+        }, (error) => {
+          console.warn('Files directory path invalid:', error);
+          checkComplete();
+        });
+      });
+    }
+
+    // 自定义确认对话框函数
+    function showCustomConfirmDialog(message) {
+      return new Promise((resolve) => {
+        // 创建遮罩层
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.right = '0';
+        overlay.style.bottom = '0';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.zIndex = '9998';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        
+        // 创建对话框
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'white';
+        dialog.style.padding = '20px';
+        dialog.style.borderRadius = '10px';
+        dialog.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)';
+        dialog.style.zIndex = '9999';
+        dialog.style.width = '300px';
+        dialog.style.maxWidth = '80%';
+        
+        dialog.innerHTML = `
+          <div style="margin-bottom: 15px; font-size: 16px;">${message}</div>
+          <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button id="confirm-cancel" style="padding: 8px 15px; background: #f0f0f0; border: none; border-radius: 5px; cursor: pointer;">取消</button>
+            <button id="confirm-ok" style="padding: 8px 15px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">确定</button>
+          </div>
+        `;
+        
+        // 添加到遮罩层
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        // 处理按钮点击
+        const handleOk = () => {
+          cleanup();
+          resolve(true);
+        };
+        
+        const handleCancel = () => {
+          cleanup();
+          resolve(false);
+        };
+        
+        document.getElementById('confirm-ok').addEventListener('click', handleOk);
+        document.getElementById('confirm-cancel').addEventListener('click', handleCancel);
+        
+        // 清理函数
+        const cleanup = () => {
+          document.getElementById('confirm-ok').removeEventListener('click', handleOk);
+          document.getElementById('confirm-cancel').removeEventListener('click', handleCancel);
+          document.body.removeChild(overlay);
+        };
+        
+        // 点击遮罩层也取消
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) {
+            handleCancel();
+          }
+        });
+        
+        // 阻止对话框内部点击事件冒泡
+        dialog.addEventListener('click', (e) => {
+          e.stopPropagation();
+        });
+      });
+    }
+
+    // 自定义警告对话框函数
+    function showCustomAlertDialog(message) {
+      return new Promise((resolve) => {
+        // 创建遮罩层
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.right = '0';
+        overlay.style.bottom = '0';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.zIndex = '9998';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        
+        // 创建对话框
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'white';
+        dialog.style.padding = '20px';
+        dialog.style.borderRadius = '10px';
+        dialog.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)';
+        dialog.style.zIndex = '9999';
+        dialog.style.width = '300px';
+        dialog.style.maxWidth = '80%';
+        
+        dialog.innerHTML = `
+          <div style="margin-bottom: 15px; font-size: 16px;">${message}</div>
+          <div style="display: flex; justify-content: flex-end;">
+            <button id="alert-ok" style="padding: 8px 15px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">确定</button>
+          </div>
+        `;
+        
+        // 添加到遮罩层
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        // 处理按钮点击
+        const handleOk = () => {
+          cleanup();
+          resolve();
+        };
+        
+        const cleanup = () => {
+          document.getElementById('alert-ok').removeEventListener('click', handleOk);
+          document.body.removeChild(overlay);
+        };
+        
+        document.getElementById('alert-ok').addEventListener('click', handleOk);
+        
+        // 点击遮罩层也关闭
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) {
+            handleOk();
+          }
+        });
+        
+        // 阻止对话框内部点击事件冒泡
+        dialog.addEventListener('click', (e) => {
+          e.stopPropagation();
+        });
+      });
+    }
+    
+    // 清空聊天消息
+    function clearChatMessages() {
+      chatMessages.innerHTML = '';
+    }
+
+    // 添加消息到聊天界面
+    function addMessage(content, isUser = false, wav_path = '', files_path=[]) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+
+      // ===== 用户语音消息 =====
+      if (isUser && wav_path) {
+        const audio = new Audio(wav_path);
+        const voiceWrapper = document.createElement('div');
+        voiceWrapper.style.display = 'inline-flex';
+        voiceWrapper.style.alignItems = 'center';
+        voiceWrapper.style.background = '#e0f7fa';
+        voiceWrapper.style.padding = '6px 12px';
+        voiceWrapper.style.borderRadius = '8px';
+        voiceWrapper.style.cursor = 'pointer';
+        voiceWrapper.style.userSelect = 'none';
+        voiceWrapper.style.marginBottom = '4px';
+
+        // 图标
+        const icon = document.createElement('span');
+        icon.textContent = '🔊';
+        icon.style.marginRight = '8px';
+        icon.style.fontSize = '16px';
+
+        // 时长
+        const durationSpan = document.createElement('span');
+        durationSpan.style.fontSize = '14px';
+        durationSpan.style.color = '#333';
+
+        audio.addEventListener('loadedmetadata', () => {
+          durationSpan.textContent = `${Math.round(audio.duration)}"`;
+        });
+
+        // 点击播放
+        let isPlaying = false;
+        voiceWrapper.addEventListener('click', () => {
+          if (!isPlaying) {
+            audio.play();
+          } else {
+            audio.pause();
+            audio.currentTime = 0;
+          }
+        });
+        audio.addEventListener('play', () => {
+          isPlaying = true;
+          icon.textContent = '🔈';
+        });
+        audio.addEventListener('ended', () => {
+          isPlaying = false;
+          icon.textContent = '🔊';
+        });
+        audio.addEventListener('pause', () => {
+          isPlaying = false;
+          icon.textContent = '🔊';
+        });
+
+        voiceWrapper.appendChild(icon);
+        voiceWrapper.appendChild(durationSpan);
+        messageDiv.appendChild(voiceWrapper);
+
+        // === 文件列表（如果有上传文件） ===
+        if (isUser && files_path && files_path.length > 0) {
+          const fileListDiv = document.createElement('div');
+          fileListDiv.style.display = 'flex';
+          fileListDiv.style.flexWrap = 'wrap';
+          fileListDiv.style.marginTop = '4px';
+          fileListDiv.style.marginBottom = '4px';
+          fileListDiv.style.gap = '6px';
+          fileListDiv.style.justifyContent = 'flex-end'; // ✅ 右对齐
+
+          files_path.forEach(file_path => {
+            const fileItem = document.createElement('div');
+            const file_name = file_path.split("_").pop();
+            fileItem.style.display = 'flex';
+            fileItem.style.alignItems = 'center';
+            fileItem.style.padding = '3px 6px';
+            fileItem.style.border = '1px solid #ddd';
+            fileItem.style.borderRadius = '4px';
+            fileItem.style.background = '#fff';
+            fileItem.style.fontSize = '12px';
+            fileItem.style.cursor = 'pointer'; // ✅ 可点击
+
+            const iconSpan = document.createElement('span');
+            iconSpan.textContent = getFileIcon(file_name);
+            iconSpan.style.marginRight = '4px';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = file_name;
+            nameSpan.title = file_name;
+
+            fileItem.appendChild(iconSpan);
+            fileItem.appendChild(nameSpan);
+            fileListDiv.appendChild(fileItem);
+
+            // === 点击事件 ===
+            fileItem.addEventListener('click', () => {
+              const ext = file_name.split('.').pop().toLowerCase();
+              if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
+                showImagePreview(file_path); // 应用内预览
+              } else {
+                ipcRenderer.invoke('open-file', file_path); // 系统默认程序/记事本
+              }
+            });
+          });
+
+          messageDiv.appendChild(fileListDiv);
+        }
+
+        // === 语音转文字部分 ===
+        const transcriptDiv = document.createElement('div');
+        transcriptDiv.innerHTML = `
+          <div style="
+            font-weight: bold;
+            color: #4CAF50;
+            background: linear-gradient(90deg, #ff0000, #ff9900, #33cc33, #3399ff, #9900cc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 2px;
+          ">语音转文字：</div>
+          <div>${content.replace(/\n/g, '<br>')}</div>
+        `;
+        transcriptDiv.style.fontSize = '13px';
+        transcriptDiv.style.marginTop = '4px';
+        messageDiv.appendChild(transcriptDiv);
+
+      } else {
+        // ===== 普通文字消息 =====
+        // 如果有文件，也加文件列表
+        if (isUser && files_path && files_path.length > 0) {
+          const fileListDiv = document.createElement('div');
+          fileListDiv.style.display = 'flex';
+          fileListDiv.style.flexWrap = 'wrap';
+          fileListDiv.style.marginBottom = '4px';
+          fileListDiv.style.gap = '6px';
+          fileListDiv.style.justifyContent = 'flex-end'; // ✅ 右对齐
+
+          files_path.forEach(file_path => {
+            const fileItem = document.createElement('div');
+            const file_name = file_path.split("_").pop();
+            fileItem.style.display = 'flex';
+            fileItem.style.alignItems = 'center';
+            fileItem.style.padding = '3px 6px';
+            fileItem.style.border = '1px solid #ddd';
+            fileItem.style.borderRadius = '4px';
+            fileItem.style.background = '#fff';
+            fileItem.style.fontSize = '12px';
+            fileItem.style.cursor = 'pointer'; // ✅ 可点击
+
+            const iconSpan = document.createElement('span');
+            iconSpan.textContent = getFileIcon(file_name);
+            iconSpan.style.marginRight = '4px';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = file_name;
+            nameSpan.title = file_name;
+
+            fileItem.appendChild(iconSpan);
+            fileItem.appendChild(nameSpan);
+            fileListDiv.appendChild(fileItem);
+
+            // === 点击事件 ===
+            fileItem.addEventListener('click', () => {
+              const ext = file_name.split('.').pop().toLowerCase();
+              if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
+                showImagePreview(file_path); // 应用内预览
+              } else {
+                ipcRenderer.invoke('open-file', file_path); // 系统默认程序/记事本
+              }
+            });
+          });
+
+          messageDiv.appendChild(fileListDiv);
+        }
+
+        // 最后加文字
+        const textDiv = document.createElement('div');
+        textDiv.innerHTML = content.replace(/\n/g, '<br>');
+        messageDiv.appendChild(textDiv);
+      }
+
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function showLoading() {
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'message bot-message';
+      loadingDiv.innerHTML = '<div class="loading"></div> 思考中...';
+      loadingDiv.id = 'loading-message';
+      chatMessages.appendChild(loadingDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function hideLoading() {
+      const loadingMessage = document.getElementById('loading-message');
+      if (loadingMessage) {
+        loadingMessage.remove();
+      }
+    }
+    
+    // 修改sendMessage函数，添加语音控制参数
+    async function sendMessage() {
+      const message = chatInput.value.trim();
+      if (!message || !currentSessionId) return;
+      
+      let files_path = []
+      for (const file of uploadedFiles) {
+        files_path.push(file.path);
+      }
+      
+      // 添加用户消息
+      addMessage(message, true, '', files_path);
+      chatInput.value = '';
+      resetTextareaHeight(); // 重置输入框高度
+      
+      // 显示加载状态
+      sendButton.disabled = true;
+      sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
+      showLoading();
+
+      // 清空files列表
+      uploadedFiles = []
+      updateUploadedFilesDisplay();
+      
+      try {
+        // 添加用户消息到历史文件
+        await addMessageToSession(currentSessionId, 'user', message, '', files_path);
+
+        // 获取会话历史
+        const history = await getSessionHistory(currentSessionId);
+
+        // 调用服务器获取回复
+        const response = await getModelResponse(message, history, isVoiceEnabled);
+        const tts_success = await getTTSWav(response)
+        // saveTestWavToDataDirectory()
+        simulateLive2DClick()
+
+        hideLoading();
+        addMessage(response, false);
+
+        // 添加助手回复到历史文件
+        await addMessageToSession(currentSessionId, 'assistant', response);
+
+        // 更新会话列表
+        sessions = await getAllSessions();
+        renderSessionsList();
+      } catch (error) {
+        hideLoading();
+        addMessage('抱歉，出现了一些问题，请稍后再试。');
+        console.error('Chat error:', error);
+      } finally {
+        sendButton.disabled = false;
+        sendButton.innerHTML = '<span>→</span>';
+      }
+    }
+
+    // 模拟点击 Live2D 画布中心点的函数（使用 TouchEvent 以兼容移动设备）
+    function simulateLive2DClick()   {
+      const live2dContainer = document.getElementById('live2d-container');
+      const canvas = live2dContainer ? live2dContainer.querySelector('canvas') : document.querySelector('canvas');
+      
+      if (!canvas) {
+        console.warn('未找到Live2D画布元素');
+        return false;
+      }
+      
+      const rect = canvas.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      
+      // 更完整的事件序列
+      const events = [
+        // 触摸开始
+        new TouchEvent('touchstart', {
+          bubbles: true,
+          cancelable: true,
+          touches: [new Touch({
+            identifier: 0,
+            target: canvas,
+            clientX: centerX,
+            clientY: centerY,
+            pageX: centerX + window.pageXOffset,
+            pageY: centerY + window.pageYOffset,
+            screenX: centerX,
+            screenY: centerY,
+            radiusX: 1,
+            radiusY: 1,
+            rotationAngle: 0,
+            force: 1
+          })]
+        }),
+        
+        // 鼠标按下
+        new MouseEvent('mousedown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: centerX,
+          clientY: centerY,
+          button: 0,
+          buttons: 1
+        }),
+        
+        // 触摸结束
+        new TouchEvent('touchend', {
+          bubbles: true,
+          cancelable: true,
+          changedTouches: [new Touch({
+            identifier: 0,
+            target: canvas,
+            clientX: centerX,
+            clientY: centerY,
+            pageX: centerX + window.pageXOffset,
+            pageY: centerY + window.pageYOffset,
+            screenX: centerX,
+            screenY: centerY
+          })]
+        }),
+        
+        // 鼠标抬起
+        new MouseEvent('mouseup', {
+          bubbles: true,
+          cancelable: true,
+          clientX: centerX,
+          clientY: centerY,
+          button: 0
+        }),
+        
+        // 点击事件
+        new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          clientX: centerX,
+          clientY: centerY,
+          button: 0
+        }),
+        
+        // 指针事件
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: centerX,
+          clientY: centerY,
+          pointerId: 1,
+          pointerType: 'touch'
+        }),
+        
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          clientX: centerX,
+          clientY: centerY,
+          pointerId: 1,
+          pointerType: 'touch'
+        })
+      ];
+      
+      // 依次触发所有事件
+      events.forEach((event, index) => {
+        setTimeout(() => {
+          canvas.dispatchEvent(event);
+        }, index * 10); // 每个事件间隔10ms
+      });
+      
+      console.log(`模拟完整点击序列: (${centerX}, ${centerY})`);
+      return true;
+    }
+    
+    function saveTestWavToDataDirectory() {
+        return new Promise((resolve, reject) => {
+            // 可用的WAV文件列表
+            const wavFiles = ['test_1.wav', 'test_2.wav', 'test_3.wav', 'test_4.wav'];
+            
+            // 随机选择一个文件
+            const randomIndex = Math.floor(Math.random() * wavFiles.length);
+            const selectedFile = wavFiles[randomIndex];
+            
+            console.log('Randomly selected file:', selectedFile);
+            
+            // 源文件路径（相对于 www 目录）
+            const sourcePath = 'file:///android_asset/www/' + selectedFile;
+            // 目标路径（dataDirectory 下的 audio.wav）
+            const targetPath = cordova.file.dataDirectory + 'audio.wav';
+
+            console.log('Source path:', sourcePath);
+            console.log('Target path:', targetPath);
+
+            // 确保 dataDirectory 可访问
+            window.resolveLocalFileSystemURL(cordova.file.dataDirectory, (dirEntry) => {
+                // 访问源文件
+                window.resolveLocalFileSystemURL(sourcePath, (sourceFileEntry) => {
+                    // 复制文件到 dataDirectory，保存为 audio.wav
+                    sourceFileEntry.copyTo(dirEntry, 'audio.wav', (targetFileEntry) => {
+                        console.log('Selected file (' + selectedFile + ') saved as audio.wav to:', targetFileEntry.fullPath);
+                        resolve({
+                            targetPath: targetFileEntry.fullPath,
+                            selectedFile: selectedFile,
+                            targetUrl: targetFileEntry.toURL()
+                        });
+                    }, (error) => {
+                        console.error('Failed to copy ' + selectedFile + ' as audio.wav:', error);
+                        reject(error);
+                    });
+                }, (error) => {
+                    console.error('Source file (' + selectedFile + ') not found or inaccessible:', error);
+                    reject(error);
+                });
+            }, (error) => {
+                console.error('Data directory inaccessible:', error);
+                reject(error);
+            });
+        });
+    }
+
+    async function getModelResponse(message, history, enableVoice) {
+        // 获取服务器地址 - 你需要替换为你的实际IP地址
+        const serverUrl = 'https://192.168.31.71:5000/chat';
+        
+        const requestBody = {
+            message: message,
+            history: history || [],
+            enableVoice: enableVoice || false
+        };
+
+        console.log('发送请求到服务器:', serverUrl);
+        console.log('请求数据:', requestBody);
+
+        try {
+            const response = await fetch(serverUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(requestBody),
+                // 设置超时时间
+                timeout: 30000
+            });
+
+            console.log('服务器响应状态:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Server error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log('服务器响应数据:', data);
+
+            if (data.success) {
+                return data.response;
+            } else {
+                throw new Error(data.error || '服务器处理失败');
+            }
+
+        } catch (error) {
+            console.error('调用服务器失败:', error);
+            
+            // 网络错误的具体处理
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                console.error('网络连接失败，请检查服务器是否运行');
+                return '无法连接到服务器，请检查网络连接。';
+            }
+            
+            return getFallbackResponse(message); // 使用备用回复
+        }
+    }
+
+    function saveWavToFile(blob) {
+        return new Promise((resolve, reject) => {
+            window.resolveLocalFileSystemURL(cordova.file.dataDirectory, function (dir) {
+                dir.getFile("audio.wav", { create: true }, function (file) {
+                    file.createWriter(function (fileWriter) {
+                        fileWriter.onwriteend = function () {
+                            console.log("✅ audio.wav 已保存到:", cordova.file.dataDirectory);
+                            resolve(cordova.file.dataDirectory + "audio.wav");
+                        };
+                        fileWriter.onerror = function (e) {
+                            console.error("保存失败:", e);
+                            reject(e);
+                        };
+                        fileWriter.write(blob);
+                    }, reject);
+                }, reject);
+            }, reject);
+        });
+    }
+
+    async function getTTSWav(text) {
+        const serverUrl = "https://192.168.31.71:5000/tts"; // 换成你的服务器地址
+
+        try {
+            const response = await fetch(serverUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ text })
+            });
+
+            if (!response.ok) {
+                throw new Error("TTS请求失败: " + response.status);
+            }
+
+            // 获取 ArrayBuffer
+            const arrayBuffer = await response.arrayBuffer();
+            const blob = new Blob([arrayBuffer], { type: "audio/wav" });
+
+            // 等待写入完成
+            const filePath = await saveWavToFile(blob);
+            console.log("下一步逻辑开始执行，本地文件路径:", filePath);
+
+            return "audio.wav 已保存";
+        } catch (error) {
+            console.error("调用TTS失败:", error);
+            return "TTS失败";
+        }
+    }
+
+    // 添加消息到会话历史文件 (.jsonl)
+    function addMessageToSession(sessionId, role, content, wav_path = '', files_path = []) {
+      return new Promise((resolve, reject) => {
+        const filePath = cordova.file.dataDirectory + 'chat_history/' + sessionId + '.jsonl';
+        window.resolveLocalFileSystemURL(filePath, (fileEntry) => {
+          fileEntry.createWriter((fileWriter) => {
+            fileWriter.onwriteend = () => {
+              console.log('Message added to session:', sessionId);
+              resolve();
+            };
+            fileWriter.onerror = reject;
+
+            // 移动到文件末尾
+            fileWriter.seek(fileWriter.length);
+
+            // 写入新消息（JSON 对象 + 换行）
+            const messageObj = {
+              role: role,
+              content: content,
+              wav_path: wav_path,
+              files_path: files_path,
+              timestamp: new Date().toISOString()
+            };
+            const data = JSON.stringify(messageObj) + '\n';
+            fileWriter.write(data);
+          }, reject);
+        }, reject);
+      });
+    }
+
+    // 调整textarea高度
+    function adjustTextareaHeight() {
+      // 重置高度以正确计算scrollHeight
+      chatInput.style.height = 'auto';
+      // 设置高度为内容高度（但不超过最大高度）
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+    }
+    
+    // 重置textarea高度
+    function resetTextareaHeight() {
+      chatInput.style.height = 'auto';
+    }
+    
+    // 事件监听
+    newChatButton.addEventListener('click', createNewSession);
+    sendButton.addEventListener('click', sendMessage);
+    
+    // // 修改键盘事件处理 - 支持Shift+Enter换行
+    // chatInput.addEventListener('keydown', function(e) {
+    //   if (e.key === 'Enter' && !e.shiftKey) {
+    //     // Enter键单独按下 - 发送消息
+    //     e.preventDefault(); // 阻止默认换行行为
+    //     sendMessage();
+    //   } else if (e.key === 'Enter' && e.shiftKey) {
+    //     // Shift+Enter - 插入换行
+    //     // 不需要阻止默认行为，浏览器会自动插入换行
+    //     // 但我们需要在输入后调整高度
+    //     setTimeout(adjustTextareaHeight, 0);
+    //   }
+    // });
+    // 输入时自动调整高度
+    chatInput.addEventListener('input', function() {
+      adjustTextareaHeight();
+    });
+    
+    // 确保 Live2D canvas 被正确放置在容器中
+    document.addEventListener('DOMContentLoaded', () => {
+      
+      // 观察 canvas 元素的添加
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.tagName === 'CANVAS') {
+              const container = document.getElementById('live2d-container');
+              if (container && node.parentElement === document.body) {
+                container.appendChild(node);
+                node.style.width = '100%';
+                node.style.height = '100%';
+              }
+            }
+          });
+        });
+      });
+      
+      observer.observe(document.body, { childList: true });
+    });
+    
+    // const { WaveFile } = require('wavefile');
+    let isRecording = false;
+    let mediaRecorder;
+    let audioChunks = [];
+    let audioContext;
+    let analyser;
+    let dataArray;
+    let animationId;
+
+    const micButton = document.getElementById('mic-button');
+    const chatInputContainer = document.getElementById('chat-input-container');
+    const recordingContainer = document.getElementById('recording-container');
+    const stopRecordingBtn = document.getElementById('stop-recording');
+    const waveformCanvas = document.getElementById('waveform');
+    const ctx = waveformCanvas.getContext('2d');
+
+    micButton.addEventListener('click', async () => {
+      if (!isRecording) {
+        await startRecording();
+      }
+    });
+
+    stopRecordingBtn.addEventListener('click', () => {
+      if (isRecording) {
+        stopRecording();
+      }
+    });
+
+    async function startRecording() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          function downsampleBuffer(buffer, sampleRate, targetRate) {
+            if (targetRate === sampleRate) return buffer;
+            const sampleRateRatio = sampleRate / targetRate;
+            const newLength = Math.round(buffer.length / sampleRateRatio);
+            const result = new Float32Array(newLength);
+            let offsetResult = 0;
+            let offsetBuffer = 0;
+            while (offsetResult < result.length) {
+              const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+              let accum = 0, count = 0;
+              for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                accum += buffer[i];
+                count++;
+              }
+              result[offsetResult] = accum / count;
+              offsetResult++;
+              offsetBuffer = nextOffsetBuffer;
+            }
+            return result;
+          }
+
+          function floatTo16BitPCM(float32Array) {
+            const buffer = new ArrayBuffer(float32Array.length * 2);
+            const view = new DataView(buffer);
+            let offset = 0;
+            for (let i = 0; i < float32Array.length; i++, offset += 2) {
+              let s = Math.max(-1, Math.min(1, float32Array[i]));
+              view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+            return new Int16Array(buffer);
+          }
+
+          const audioBlob = new Blob(audioChunks);
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const audioBufferObj = await audioContext.decodeAudioData(arrayBuffer);
+     
+          const downsampledData = downsampleBuffer(audioBufferObj.getChannelData(0), audioBufferObj.sampleRate, 16000);
+          const int16Data = floatTo16BitPCM(downsampledData);
+
+          let wav = new WaveFile();
+          wav.fromScratch(1, 16000, '16', int16Data);
+          const wavBuffer = wav.toBuffer();
+
+          // 调主进程保存 wav 并返回路径
+          const savedFilePath = await ipcRenderer.invoke('save-recorded-audio', {
+            audioBuffer: wavBuffer, 
+            sessionId: currentSessionId
+          });
+          
+          // 下面代码和sendMessage函数相似
+          const message = await ipcRenderer.invoke('run-asr', savedFilePath);
+          console.log('ASR 结果:', message);
+
+          // 下面代码和sendMessage函数相似
+          if (!message || !currentSessionId) return;
+          
+          let files_path = []
+          for (const file of uploadedFiles) {
+            files_path.push(file.path);
+          }
+
+          // 添加用户消息
+          addMessage(message, true, savedFilePath, files_path);
+          chatInput.value = '';
+          resetTextareaHeight(); // 重置输入框高度
+          
+          // 显示加载状态
+          sendButton.disabled = true;
+          sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
+          showLoading();
+
+          // 清空files列表
+          uploadedFiles = []
+          updateUploadedFilesDisplay();
+          
+          try {
+            // 发送消息到主进程，包含语音控制参数
+            const response = await ipcRenderer.invoke('send-chat-message', { 
+              message, 
+              sessionId: currentSessionId,
+              wav_path: savedFilePath,
+              files_path: files_path,
+              enableVoice: isVoiceEnabled  // 新增语音控制参数
+            });
+            hideLoading();
+            addMessage(response);
+            
+            // 更新会话列表（可能会话名称发生变化）
+            sessions = await ipcRenderer.invoke('get-all-sessions');
+            renderSessionsList();
+          } catch (error) {
+            hideLoading();
+            addMessage('抱歉，出现了一些问题，请稍后再试。');
+            console.error('Chat error:', error);
+          } finally {
+            sendButton.disabled = false;
+            sendButton.innerHTML = '<span>→</span>';
+          }
+        };
+
+        // 实时波形
+        audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        source.connect(analyser);
+        drawWaveform();
+
+        // UI切换
+        chatInputContainer.style.display = 'none';
+        recordingContainer.style.display = 'flex';
+
+        mediaRecorder.start();
+        isRecording = true;
+        console.log('录音开始');
+      } catch (err) {
+        console.error('无法访问麦克风:', err);
+      }
+    }
+
+    function stopRecording() {
+      isRecording = false;
+      mediaRecorder.stop();
+
+      // UI切换回聊天输入
+      chatInputContainer.style.display = 'flex';
+      recordingContainer.style.display = 'none';
+    }
+
+    function drawWaveform() {
+      animationId = requestAnimationFrame(drawWaveform);
+      analyser.getByteTimeDomainData(dataArray);
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#4CAF50';
+      ctx.beginPath();
+
+      const sliceWidth = waveformCanvas.width / analyser.frequencyBinCount;
+      let x = 0;
+      for (let i = 0; i < analyser.frequencyBinCount; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * waveformCanvas.height / 2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx.lineTo(waveformCanvas.width, waveformCanvas.height / 2);
+      ctx.stroke();
+    }
+
+    // 在全局变量部分添加
+    let uploadedFiles = [];
+
+    // 添加文件上传相关函数
+    function initFileUpload() {
+      const fileUploadButton = document.getElementById('file-upload-button');
+      const fileInput = document.getElementById('file-input');
+      
+      fileUploadButton.addEventListener('click', () => {
+        fileInput.click();
+      });
+      
+      fileInput.addEventListener('change', handleFileSelect);
+    }
+
+    async function handleFileSelect(event) {
+      const files = Array.from(event.target.files);
+      
+      for (const file of files) {
+        try {
+          // 先转成 ArrayBuffer
+          const arrayBuffer = await file.arrayBuffer();
+          
+          // 发到主进程
+          const savedPath = await ipcRenderer.invoke('save-uploaded-file', {
+            fileName: file.name,
+            buffer: Buffer.from(arrayBuffer), // 转 Node Buffer
+            sessionId: currentSessionId
+          });
+
+          uploadedFiles.push({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            path: savedPath
+          });
+        } catch (error) {
+          console.error('文件上传失败:', error);
+        }
+      }
+      
+      updateUploadedFilesDisplay();
+      event.target.value = ''; // 清空 input
+    }
+
+    function showImagePreview(filePath) {
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.backgroundColor = 'rgba(0,0,0,0.7)';
+      overlay.style.display = 'flex';
+      overlay.style.justifyContent = 'center';
+      overlay.style.alignItems = 'center';
+      overlay.style.zIndex = '9999';
+      overlay.style.cursor = 'zoom-out';
+
+      const img = document.createElement('img');
+      img.src = filePath;
+      img.style.maxWidth = '90%';
+      img.style.maxHeight = '90%';
+      img.style.borderRadius = '8px';
+      img.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+
+      overlay.appendChild(img);
+      document.body.appendChild(overlay);
+
+      overlay.addEventListener('click', () => {
+        document.body.removeChild(overlay);
+      });
+    }
+
+    function updateUploadedFilesDisplay() {
+      const container = document.getElementById('uploaded-files-container');
+      const list = document.getElementById('uploaded-files-list');
+      
+      // 添加错误检查
+      if (!container || !list) {
+        console.error('文件显示容器未找到');
+        return;
+      }
+      
+      if (uploadedFiles.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+      
+      container.style.display = 'block';
+      list.innerHTML = '';
+
+      uploadedFiles.forEach((file, index) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+
+        const fileIcon = getFileIcon(file.name);
+
+        fileItem.innerHTML = `
+          <span class="file-icon" style="margin-right: 4px; cursor: pointer;" title="点击打开">${fileIcon}</span>
+          <span class="file-name" title="${file.name}" style="cursor: pointer;">${file.name}</span>
+          <button class="file-remove-btn" data-index="${index}" title="删除文件">×</button>
+        `;
+
+        const iconSpan = fileItem.querySelector('.file-icon');
+        const nameSpan = fileItem.querySelector('.file-name');
+
+        // 点击文件 -> 判断类型
+        [iconSpan, nameSpan].forEach(el => {
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+              showImagePreview(file.path); // ✅ 应用内预览
+            } else {
+              ipcRenderer.invoke('open-file', file.path); // ✅ 系统默认程序
+            }
+          });
+        });
+
+        // 删除按钮
+        const removeBtn = fileItem.querySelector('.file-remove-btn');
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation(); 
+          removeFile(index);
+        });
+
+        list.appendChild(fileItem);
+      });
+    }
+
+    // 添加文件图标函数
+    function getFileIcon(fileName) {
+      const ext = fileName.split('.').pop().toLowerCase();
+      const iconMap = {
+        'txt': '📄',
+        'pdf': '📕',
+        'doc': '📘',
+        'docx': '📘',
+        'png': '🖼️',
+        'jpg': '🖼️',
+        'jpeg': '🖼️',
+        'gif': '🖼️',
+        'mp3': '🎵',
+        'mp4': '🎬',
+        'zip': '📦',
+        'rar': '📦'
+      };
+      return iconMap[ext] || '📎';
+    }
+
+    async function removeFile(index) {
+      const file = uploadedFiles[index];
+      
+      try {
+        await ipcRenderer.invoke('remove-uploaded-file', {
+          filePath: file.path,
+          sessionId: currentSessionId
+        });
+        
+        uploadedFiles.splice(index, 1);
+        updateUploadedFilesDisplay();
+      } catch (error) {
+        console.error('删除文件失败:', error);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+curl -X POST http://192.168.31.71:5000/chat -H "Content-Type: application/json" -d "{\"message\": \"你好\", \"history\": [], \"enableVoice\": false}"
+curl -k -X POST https://192.168.31.71:5000/tts -H "Content-Type: application/json" -d "{\"text\":\"外婆，晚饭吃了吗？\"}" --output audio.wav
