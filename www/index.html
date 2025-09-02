@@ -803,6 +803,8 @@
       // 文件系统相关代码
       console.log(window.cordova.file.dataDirectory);
 
+      initCanvas();
+
       // 初始化会话
       initSessions();
       
@@ -1075,14 +1077,19 @@
       try {
         // const history = await ipcRenderer.invoke('get-session-history', sessionId);
         const history = await getSessionHistory(sessionId); // 获取会话历史
+        console.log(history)
         clearChatMessages();
         
         if (history.length === 0) {
           addMessage('你好！我是02，有什么想聊的吗？', false);
         } else {
-          history.forEach(message => {
-            addMessage(message.content, message.role === 'user', message.wav_path || '', message.files_path);
-          });
+          // history.forEach(message => {
+          //   addMessage(message.content, message.role === 'user', message.wav_path || '', message.files_path);
+          // });
+          history.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+          for (const message of history) {
+            await addMessage(message.content, message.role === 'user', message.wav_path || '', message.files_path);
+          }
         }
       } catch (error) {
         console.error('Failed to load session history:', error);
@@ -1369,13 +1376,89 @@
     }
 
     // 添加消息到聊天界面
-    function addMessage(content, isUser = false, wav_path = '', files_path=[]) {
+    async function addMessage(content, isUser = false, wav_path = '', files_path=[]) {
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
 
       // ===== 用户语音消息 =====
       if (isUser && wav_path) {
-        const audio = new Audio(wav_path);
+        let audio;
+        try {
+          // 检查文件是否存在
+          console.log('Checking wav_path:', wav_path);
+          const fileExists = await new Promise((resolve) => {
+            window.resolveLocalFileSystemURL(wav_path, () => resolve(true), () => resolve(false));
+          });
+          if (!fileExists) {
+            throw new Error('Audio file does not exist at: ' + wav_path);
+          }
+
+          const audioBlob = await new Promise((resolve, reject) => {
+            window.resolveLocalFileSystemURL(wav_path, (fileEntry) => {
+              fileEntry.file((file) => {
+                console.log('Audio file loaded:', {
+                  name: file.name,
+                  size: file.size,
+                  type: file.type,
+                  isFile: file instanceof File,
+                  isBlob: file instanceof Blob,
+                  constructorName: file.constructor.name,
+                  toString: Object.prototype.toString.call(file)
+                });
+                // 如果 file 不是 Blob 或 File，尝试手动创建 Blob
+                if (!(file instanceof Blob)) {
+                  console.warn('File object is not a Blob, attempting to convert');
+                  // 假设 file 包含原始数据，尝试从 file 读取数据
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const arrayBuffer = reader.result;
+                    const blob = new Blob([arrayBuffer], { type: 'audio/x-wav' });
+                    resolve(blob);
+                  };
+                  reader.onerror = (error) => reject(error);
+                  reader.readAsArrayBuffer(file);
+                } else {
+                  resolve(file);
+                }
+              }, (error) => {
+                console.error('Failed to load audio file:', error);
+                reject(error);
+              });
+            }, (error) => {
+              console.error('Invalid wav_path:', wav_path, error);
+              reject(error);
+            });
+          });
+
+          // 再次检查 audioBlob 类型
+          console.log('audioBlob type:', {
+            isBlob: audioBlob instanceof Blob,
+            isFile: audioBlob instanceof File,
+            constructorName: audioBlob.constructor.name,
+            toString: Object.prototype.toString.call(audioBlob)
+          });
+          if (!(audioBlob instanceof Blob)) {
+            throw new Error('audioBlob is not a Blob or File object: ' + Object.prototype.toString.call(audioBlob));
+          }
+
+          const audioUrl = URL.createObjectURL(audioBlob);
+          audio = new Audio(audioUrl);
+          console.log('Audio URL created:', audioUrl);
+
+          // Revoke Blob URL when audio is no longer needed
+          audio.addEventListener('ended', () => URL.revokeObjectURL(audioUrl));
+          audio.addEventListener('error', () => URL.revokeObjectURL(audioUrl));
+        } catch (error) {
+          console.error('Error creating Audio element:', error);
+          const errorDiv = document.createElement('div');
+          errorDiv.textContent = '无法加载音频文件: ' + error.message;
+          errorDiv.style.color = 'red';
+          messageDiv.appendChild(errorDiv);
+          chatMessages.appendChild(messageDiv);
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+          return;
+        }
+
         const voiceWrapper = document.createElement('div');
         voiceWrapper.style.display = 'inline-flex';
         voiceWrapper.style.alignItems = 'center';
@@ -1989,6 +2072,14 @@
     const waveformCanvas = document.getElementById('waveform');
     const ctx = waveformCanvas.getContext('2d');
 
+    // 初始化canvas尺寸
+    function initCanvas() {
+      const rect = waveformCanvas.getBoundingClientRect();
+      console.log('Canvas dimensions:', rect.width, rect.height);
+      waveformCanvas.width = rect.width || 100; // 提供默认值
+      waveformCanvas.height = rect.height || 60; // 提供默认值
+    }
+
     micButton.addEventListener('click', async () => {
       if (!isRecording) {
         await startRecording();
@@ -2001,10 +2092,65 @@
       }
     });
 
+    // 请求录音权限
+    async function requestAudioPermission() {
+      return new Promise((resolve) => {
+        if (window.cordova && cordova.plugins && cordova.plugins.permissions) {
+          const permissions = cordova.plugins.permissions;
+          permissions.checkPermission(permissions.RECORD_AUDIO, (status) => {
+            if (status.hasPermission) {
+              resolve(true);
+            } else {
+              permissions.requestPermission(permissions.RECORD_AUDIO, (status) => {
+                resolve(status.hasPermission);
+              }, () => resolve(false));
+            }
+          }, () => resolve(false));
+        } else {
+          // 如果没有权限插件，直接尝试获取麦克风
+          resolve(true);
+        }
+      });
+    }
+
     async function startRecording() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+        // 检查权限
+        const hasPermission = await requestAudioPermission();
+        if (!hasPermission) {
+          alert('需要录音权限才能使用语音功能');
+          return;
+        }
+
+        initCanvas();
+
+        // 获取音频流
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          }
+        });
+
+        // 设置MediaRecorder
+        const options = {
+          mimeType: 'audio/webm;codecs=opus'
+        };
+        
+        // 检查浏览器支持的格式
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options.mimeType = 'audio/webm';
+          if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options.mimeType = 'audio/mp4';
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+              delete options.mimeType;
+            }
+          }
+        }
+
+        mediaRecorder = new MediaRecorder(stream, options);
         audioChunks = [];
 
         mediaRecorder.ondataavailable = e => {
@@ -2012,108 +2158,14 @@
         };
 
         mediaRecorder.onstop = async () => {
-          function downsampleBuffer(buffer, sampleRate, targetRate) {
-            if (targetRate === sampleRate) return buffer;
-            const sampleRateRatio = sampleRate / targetRate;
-            const newLength = Math.round(buffer.length / sampleRateRatio);
-            const result = new Float32Array(newLength);
-            let offsetResult = 0;
-            let offsetBuffer = 0;
-            while (offsetResult < result.length) {
-              const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
-              let accum = 0, count = 0;
-              for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
-                accum += buffer[i];
-                count++;
-              }
-              result[offsetResult] = accum / count;
-              offsetResult++;
-              offsetBuffer = nextOffsetBuffer;
-            }
-            return result;
-          }
-
-          function floatTo16BitPCM(float32Array) {
-            const buffer = new ArrayBuffer(float32Array.length * 2);
-            const view = new DataView(buffer);
-            let offset = 0;
-            for (let i = 0; i < float32Array.length; i++, offset += 2) {
-              let s = Math.max(-1, Math.min(1, float32Array[i]));
-              view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-            }
-            return new Int16Array(buffer);
-          }
-
-          const audioBlob = new Blob(audioChunks);
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          const audioBufferObj = await audioContext.decodeAudioData(arrayBuffer);
-     
-          const downsampledData = downsampleBuffer(audioBufferObj.getChannelData(0), audioBufferObj.sampleRate, 16000);
-          const int16Data = floatTo16BitPCM(downsampledData);
-
-          let wav = new WaveFile();
-          wav.fromScratch(1, 16000, '16', int16Data);
-          const wavBuffer = wav.toBuffer();
-
-          // 调主进程保存 wav 并返回路径
-          const savedFilePath = await ipcRenderer.invoke('save-recorded-audio', {
-            audioBuffer: wavBuffer, 
-            sessionId: currentSessionId
-          });
-          
-          // 下面代码和sendMessage函数相似
-          const message = await ipcRenderer.invoke('run-asr', savedFilePath);
-          console.log('ASR 结果:', message);
-
-          // 下面代码和sendMessage函数相似
-          if (!message || !currentSessionId) return;
-          
-          let files_path = []
-          for (const file of uploadedFiles) {
-            files_path.push(file.path);
-          }
-
-          // 添加用户消息
-          addMessage(message, true, savedFilePath, files_path);
-          chatInput.value = '';
-          resetTextareaHeight(); // 重置输入框高度
-          
-          // 显示加载状态
-          sendButton.disabled = true;
-          sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
-          showLoading();
-
-          // 清空files列表
-          uploadedFiles = []
-          updateUploadedFilesDisplay();
-          
-          try {
-            // 发送消息到主进程，包含语音控制参数
-            const response = await ipcRenderer.invoke('send-chat-message', { 
-              message, 
-              sessionId: currentSessionId,
-              wav_path: savedFilePath,
-              files_path: files_path,
-              enableVoice: isVoiceEnabled  // 新增语音控制参数
-            });
-            hideLoading();
-            addMessage(response);
-            
-            // 更新会话列表（可能会话名称发生变化）
-            sessions = await ipcRenderer.invoke('get-all-sessions');
-            renderSessionsList();
-          } catch (error) {
-            hideLoading();
-            addMessage('抱歉，出现了一些问题，请稍后再试。');
-            console.error('Chat error:', error);
-          } finally {
-            sendButton.disabled = false;
-            sendButton.innerHTML = '<span>→</span>';
-          }
+          await processRecording();
         };
 
         // 实时波形
-        audioContext = new AudioContext();
+        // 设置音频分析器用于波形显示
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: 16000
+        });
         const source = audioContext.createMediaStreamSource(stream);
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
@@ -2135,29 +2187,360 @@
 
     function stopRecording() {
       isRecording = false;
-      mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+
+      // 停止所有音频轨道
+      if (mediaRecorder && mediaRecorder.stream) {
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      }
+
+      // 停止波形动画
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
 
       // UI切换回聊天输入
       chatInputContainer.style.display = 'flex';
       recordingContainer.style.display = 'none';
     }
 
+    async function processRecording() {
+      try {
+        // 创建音频blob
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        
+        // 转换为ArrayBuffer
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        
+        // 解码音频数据
+        const audioBufferObj = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // 确保是16kHz单声道
+        const targetSampleRate = 16000;
+        let audioData = audioBufferObj.getChannelData(0);
+        
+        // 如果采样率不是16kHz，进行重采样
+        if (audioBufferObj.sampleRate !== targetSampleRate) {
+          audioData = downsampleBuffer(audioData, audioBufferObj.sampleRate, targetSampleRate);
+        }
+        
+        // 转换为16位PCM
+        const int16Data = floatTo16BitPCM(audioData);
+        
+        // 创建WAV文件
+        const wavBuffer = createWAVFile(int16Data, targetSampleRate);
+        
+        // 保存文件到Cordova文件系统
+        const savedFilePath = await saveAudioFile(wavBuffer);
+        
+        // 调用ASR API
+        const transcription = await performASR(savedFilePath);
+        
+        if (transcription && transcription.trim()) {
+          // 处理识别结果，类似原来的sendMessage逻辑
+          await handleTranscription(transcription, savedFilePath);
+        } else {
+          console.log('没有识别到有效内容');
+        }
+        
+      } catch (error) {
+        console.error('处理录音时出错:', error);
+        alert('录音处理失败，请重试');
+      }
+    }
+
+    // 重采样函数
+    function downsampleBuffer(buffer, sampleRate, targetRate) {
+      if (targetRate === sampleRate) return buffer;
+      const sampleRateRatio = sampleRate / targetRate;
+      const newLength = Math.round(buffer.length / sampleRateRatio);
+      const result = new Float32Array(newLength);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+      
+      while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+          accum += buffer[i];
+          count++;
+        }
+        result[offsetResult] = accum / count;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+      }
+      return result;
+    }
+
+    // 转换为16位PCM
+    function floatTo16BitPCM(float32Array) {
+      const buffer = new ArrayBuffer(float32Array.length * 2);
+      const view = new DataView(buffer);
+      let offset = 0;
+      for (let i = 0; i < float32Array.length; i++, offset += 2) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      return new Int16Array(buffer);
+    }
+
+    // 创建WAV文件
+    function createWAVFile(audioData, sampleRate) {
+      const length = audioData.length;
+      const buffer = new ArrayBuffer(44 + length * 2);
+      const view = new DataView(buffer);
+      
+      // WAV文件头
+      const writeString = (offset, string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+      
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + length * 2, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeString(36, 'data');
+      view.setUint32(40, length * 2, true);
+      
+      // 写入音频数据
+      let offset = 44;
+      for (let i = 0; i < audioData.length; i++) {
+        view.setInt16(offset, audioData[i], true);
+        offset += 2;
+      }
+      
+      return buffer;
+    }
+
+    // 保存音频文件到Cordova文件系统
+    async function saveAudioFile(wavBuffer) {
+      return new Promise((resolve, reject) => {
+        // 确保Cordova file插件可用
+        if (!window.cordova || !window.cordova.file) {
+          reject(new Error('Cordova file plugin not available'));
+          return;
+        }
+
+        window.resolveLocalFileSystemURL(cordova.file.dataDirectory, (dirEntry) => {
+          // 创建chat_wav目录
+          dirEntry.getDirectory('chat_wav', { create: true }, (chatWavDir) => {
+            // 创建当前会话目录
+            chatWavDir.getDirectory(currentSessionId, { create: true }, (sessionDir) => {
+              // 生成文件名
+              const fileName = `recording_${Date.now()}.wav`;
+              
+              // 创建文件
+              sessionDir.getFile(fileName, { create: true }, (fileEntry) => {
+                // 写入文件
+                fileEntry.createWriter((fileWriter) => {
+                  fileWriter.onwriteend = () => {
+                    console.log('音频文件保存成功:', fileEntry.nativeURL);
+                    resolve(fileEntry.nativeURL);
+                  };
+                  
+                  fileWriter.onerror = (e) => {
+                    console.error('文件写入失败:', e);
+                    reject(e);
+                  };
+                  
+                  // 将ArrayBuffer转换为Blob
+                  const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+                  fileWriter.write(blob);
+                });
+              }, reject);
+            }, reject);
+          }, reject);
+        }, reject);
+      });
+    }
+
+    // 调用ASR API
+    async function performASR(audioFilePath) {
+      try {
+        console.log('Starting ASR with filePath:', audioFilePath);
+        const audioFile = await readAudioFile(audioFilePath);
+        
+        if (!(audioFile instanceof Blob)) {
+          throw new Error('Invalid audio file: not a Blob or File object');
+        }
+
+        const formData = new FormData();
+        formData.append('audio', audioFile, 'recording.wav');
+        console.log('FormData prepared, audioFile size:', audioFile.size, 'type:', audioFile.type);
+
+        // 调用ASR API
+        const response = await fetch('https://192.168.31.71:5000/asr', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`ASR API request failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'ASR processing failed');
+        }
+
+        // 根据API返回格式获取识别结果
+        return result.transcription || '';
+
+      } catch (error) {
+        console.error('ASR调用失败:', error);
+        return '';
+      }
+    }
+
+    // 读取音频文件（用于发送到ASR API）
+    function readAudioFile(filePath) {
+      return new Promise((resolve, reject) => {
+        console.log('Resolving file system URL:', filePath);
+        window.resolveLocalFileSystemURL(filePath, (fileEntry) => {
+          console.log('File entry resolved:', fileEntry.name);
+          fileEntry.file(
+            (file) => {
+              console.log('File loaded (raw):', {
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                isFile: file instanceof File,
+                isBlob: file instanceof Blob
+              });
+
+              // 使用 FileReader 读取文件内容并创建 Blob
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const arrayBuffer = reader.result;
+                const blob = new Blob([arrayBuffer], { type: file.type || 'audio/wav' });
+                console.log('Converted to Blob:', {
+                  size: blob.size,
+                  type: blob.type,
+                  isBlob: blob instanceof Blob
+                });
+                resolve(blob);
+              };
+              reader.onerror = (error) => {
+                console.error('FileReader error:', error);
+                reject(new Error('Failed to read file content: ' + error.message));
+              };
+              reader.readAsArrayBuffer(file);
+            },
+            (error) => {
+              console.error('Failed to read file:', error);
+              reject(new Error('Failed to read audio file: ' + error.message));
+            }
+          );
+        }, (error) => {
+          console.error('Invalid file path:', filePath, error);
+          reject(new Error('Invalid file path: ' + error.message));
+        });
+      });
+    }
+
+    // 处理转录结果
+    async function handleTranscription(transcription, audioFilePath) {
+      try {
+        if (!transcription || !currentSessionId) return;
+        
+        // 获取上传的文件路径
+        let files_path = [];
+        for (const file of uploadedFiles) {
+          files_path.push(file.path);
+        }
+
+        // 添加用户消息
+        addMessage(transcription, true, audioFilePath, files_path);
+        
+        // 重置输入框
+        if (chatInput) {
+          chatInput.value = '';
+          resetTextareaHeight();
+        }
+        
+        // 显示加载状态
+        if (sendButton) {
+          sendButton.disabled = true;
+          sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
+        }
+        showLoading();
+
+        // 清空files列表
+        uploadedFiles = [];
+        updateUploadedFilesDisplay();
+
+        await addMessageToSession(currentSessionId, 'user', transcription, audioFilePath, files_path);
+        
+        // 获取会话历史
+        const history = await getSessionHistory(currentSessionId);
+
+        // 调用服务器获取回复
+        const response = await getModelResponse(transcription, history, isVoiceEnabled);
+        const tts_success = await getTTSWav(response)
+        // saveTestWavToDataDirectory()
+        simulateLive2DClick()
+        
+        hideLoading();
+        addMessage(response);
+        
+        // 添加助手回复到历史文件
+        await addMessageToSession(currentSessionId, 'assistant', response);
+
+        // 更新会话列表
+        sessions = await getAllSessions();
+        renderSessionsList();
+      } catch (error) {
+        hideLoading();
+        addMessage('抱歉，出现了一些问题，请稍后再试。');
+        console.error('处理转录结果时出错:', error);
+      } finally {
+        if (sendButton) {
+          sendButton.disabled = false;
+          sendButton.innerHTML = '<span>→</span>';
+        }
+      }
+    }
+
     function drawWaveform() {
+      if (!analyser || !dataArray) {
+        console.error('Analyser or dataArray not initialized');
+        return;
+      }
+      if (waveformCanvas.width === 0 || waveformCanvas.height === 0) {
+        console.warn('Canvas has invalid dimensions, reinitializing');
+        initCanvas();
+      }
       animationId = requestAnimationFrame(drawWaveform);
       analyser.getByteTimeDomainData(dataArray);
-      ctx.fillStyle = 'white';
+      console.log('Waveform data sample:', dataArray.slice(0, 10)); // 调试数据
+      ctx.fillStyle = '#f0f0f0';
       ctx.fillRect(0, 0, waveformCanvas.width, waveformCanvas.height);
       ctx.lineWidth = 2;
       ctx.strokeStyle = '#4CAF50';
       ctx.beginPath();
-
-      const sliceWidth = waveformCanvas.width / analyser.frequencyBinCount;
+      const sliceWidth = waveformCanvas.width / dataArray.length;
       let x = 0;
-      for (let i = 0; i < analyser.frequencyBinCount; i++) {
-        const v = dataArray[i] / 128.0;
-        const y = v * waveformCanvas.height / 2;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      const amplitudeScale = 1; // 放大振幅
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0 * amplitudeScale;
+        const y = (v * waveformCanvas.height) / 2;
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
         x += sliceWidth;
       }
       ctx.lineTo(waveformCanvas.width, waveformCanvas.height / 2);

@@ -9,6 +9,8 @@ from flask import send_file
 import struct
 import wave
 import miniaudio
+import base64
+import urllib
 
 app = Flask(__name__)
 CORS(app)  # 允许跨域请求
@@ -236,6 +238,82 @@ def tts():
         print(f"TTS处理失败: {e}", file=sys.stderr)
         return jsonify({"error": "Internal server error"}), 500
 
+def get_file_content_as_base64(path, urlencoded=False):
+    """读取文件内容并转为 Base64 编码"""
+    with open(path, "rb") as f:
+        content = base64.b64encode(f.read()).decode("utf8")
+        if urlencoded:
+            content = urllib.parse.quote_plus(content)
+    return content
+
+def get_access_token():
+    """获取百度 ASR 的访问令牌"""
+    url = "https://aip.baidubce.com/oauth/2.0/token"
+    params = {
+        "grant_type": "client_credentials",
+        "client_id": BAIDU_ASR_API_KEY,
+        "client_secret": BAIDU_ASR_SECRET_KEY
+    }
+    return str(requests.post(url, params=params).json().get("access_token"))
+
+@app.route('/asr', methods=['POST'])
+def asr():
+    """语音识别接口"""
+    try:
+        if 'audio' not in request.files:
+            return jsonify({"error": "No audio file provided"}), 400
+
+        audio_file = request.files['audio']
+        if audio_file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+
+        # 保存上传的音频文件
+        audio_path = os.path.join("uploads", "recording.wav")
+        os.makedirs("uploads", exist_ok=True)
+        audio_file.save(audio_path)
+
+        # 准备 ASR 请求参数
+        speech = get_file_content_as_base64(audio_path, False)
+        file_len = os.path.getsize(audio_path)
+
+        url = "https://vop.baidu.com/server_api"
+        payload = {
+            "format": "wav",
+            "rate": 16000,
+            "channel": 1,
+            "cuid": "123456PYTHON",
+            "speech": speech,
+            "len": file_len,
+            "token": get_access_token(),
+            "dev_pid": 1537
+        }
+
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(url, headers=headers, json=payload)
+
+        if response.status_code != 200:
+            return jsonify({"error": "ASR API request failed", "details": response.text}), 500
+
+        result = response.json()
+        transcription = result.get("result", [""])[0] if "result" in result else ""
+
+        # 清理临时文件
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+
+        return jsonify({
+            "success": True,
+            "transcription": transcription
+        })
+
+    except Exception as e:
+        print(f"ASR处理失败: {e}", file=sys.stderr)
+        return jsonify({
+            "error": "Internal server error",
+            "transcription": "",
+            "success": False
+        }), 500
+    
 @app.route('/health', methods=['GET'])
 def health():
     """健康检查接口"""
