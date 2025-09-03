@@ -550,14 +550,19 @@
       border-radius: 8px;
       padding: 8px;
       border: 1px solid rgba(200, 200, 200, 0.5);
+      margin-bottom: 10px; /* Add margin to separate from input */
+      display: flex;
+      flex-direction: column;
+      max-height: 120px; /* Set a maximum height to prevent overlap */
+      overflow-y: auto; /* Enable vertical scrolling if content exceeds max-height */
     }
 
     #uploaded-files-list {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      max-height: 100px;
-      overflow-y: auto;
+      max-height: 100%; /* Fill the container */
+      overflow-y: auto; /* Scroll within the list if needed */
     }
 
     /* 文件项样式 */
@@ -1130,6 +1135,75 @@
         });
       });
     }
+
+    function getSessionHistoryToSend(sessionId) {
+      return new Promise((resolve, reject) => {
+        const filePath = cordova.file.dataDirectory + 'chat_history/' + sessionId + '.jsonl';
+        window.resolveLocalFileSystemURL(filePath, (fileEntry) => {
+          fileEntry.file((file) => {
+            const reader = new FileReader();
+            reader.onloadend = function () {
+              try {
+                const content = this.result;
+                const lines = content.trim().split('\n').filter(line => line.trim());
+                const historyPromises = lines.map(line => {
+                  const entry = JSON.parse(line);
+                  if (entry.files_path && entry.files_path.length > 0) {
+                    const imagePromises = entry.files_path.map(filePath => {
+                      return new Promise((resolveImage) => {
+                        window.resolveLocalFileSystemURL(filePath, (imageEntry) => {
+                          imageEntry.file((imageFile) => {
+                            const imageReader = new FileReader();
+                            imageReader.onloadend = function () {
+                              const base64String = this.result.split(',')[1]; // Remove data URL prefix
+                              const extension = filePath.split('.').pop().toLowerCase();
+                              const format = extension === 'jpg' ? 'jpeg' : extension; // Handle jpg as jpeg
+                              resolveImage(`data:image/${format};base64,${base64String}`);
+                            };
+                            imageReader.onerror = () => {
+                              console.error('Error reading image file:', imageReader.error);
+                              resolveImage(filePath); // Fallback to original path on error
+                            };
+                            imageReader.readAsDataURL(imageFile);
+                          }, () => {
+                            console.error('Error getting image file:', filePath);
+                            resolveImage(filePath); // Fallback to original path
+                          });
+                        }, () => {
+                          console.error('Error accessing image path:', filePath);
+                          resolveImage(filePath); // Fallback to original path
+                        });
+                      });
+                    });
+                    return Promise.all(imagePromises).then(base64Images => {
+                      return { ...entry, files_path: base64Images };
+                    });
+                  }
+                  return Promise.resolve(entry);
+                });
+                Promise.all(historyPromises).then(history => {
+                  resolve(history);
+                });
+              } catch (error) {
+                console.error('Error parsing session history:', error);
+                resolve([]); // Return empty array on parse error
+              }
+            };
+            reader.onerror = () => {
+              console.error('Error reading file:', reader.error);
+              resolve([]); // Return empty array on read error
+            };
+            reader.readAsText(file);
+          }, (error) => {
+            console.error('Error getting file:', error);
+            resolve([]); // Return empty array if file inaccessible
+          });
+        }, (error) => {
+          console.error('Error accessing file path:', error);
+          resolve([]); // Return empty array if path invalid
+        });
+      });
+    }
     
     // 删除会话
     async function deleteSession(sessionId) {
@@ -1680,7 +1754,7 @@
         await addMessageToSession(currentSessionId, 'user', message, '', files_path);
 
         // 获取会话历史
-        const history = await getSessionHistory(currentSessionId);
+        const history = await getSessionHistoryToSend(currentSessionId);
 
         // 调用服务器获取回复
         const response = await getModelResponse(message, history, isVoiceEnabled);
@@ -2462,7 +2536,7 @@
         }
 
         // 添加用户消息
-        addMessage(transcription, true, audioFilePath, files_path);
+        await addMessage(transcription, true, audioFilePath, files_path);
         
         // 重置输入框
         if (chatInput) {
@@ -2484,7 +2558,7 @@
         await addMessageToSession(currentSessionId, 'user', transcription, audioFilePath, files_path);
         
         // 获取会话历史
-        const history = await getSessionHistory(currentSessionId);
+        const history = await getSessionHistoryToSend(currentSessionId);
 
         // 调用服务器获取回复
         const response = await getModelResponse(transcription, history, isVoiceEnabled);
@@ -2567,24 +2641,38 @@
       
       for (const file of files) {
         try {
-          // 先转成 ArrayBuffer
-          const arrayBuffer = await file.arrayBuffer();
+          console.log('开始处理文件:', file.name, '大小:', file.size, '类型:', file.type);
           
-          // 发到主进程
-          const savedPath = await ipcRenderer.invoke('save-uploaded-file', {
-            fileName: file.name,
-            buffer: Buffer.from(arrayBuffer), // 转 Node Buffer
-            sessionId: currentSessionId
-          });
-
+          if (!file || file.size === 0) {
+            console.warn('文件大小为 0或无效，跳过处理:', file.name);
+            continue;
+          }
+          
+          const isImage = file.type.startsWith('image/');
+          let processedFile = file;
+          
+          if (isImage) {
+            console.log('检测到图片文件，开始压缩...');
+            processedFile = await compressImage(file);
+            console.log('图片压缩完成，大小:', processedFile.size);
+            
+            if (processedFile.size === 0) {
+              console.warn('压缩后文件大小为 0，跳过保存:', file.name);
+              continue;
+            }
+          }
+          
+          const savedPath = await saveFileToDataDirectory(processedFile, file.name);
+          
           uploadedFiles.push({
             name: file.name,
-            size: file.size,
+            size: processedFile.size,
             type: file.type,
             path: savedPath
           });
+          console.log('文件保存成功:', savedPath);
         } catch (error) {
-          console.error('文件上传失败:', error);
+          console.error('文件上传失败:', file.name, error);
         }
       }
       
@@ -2592,7 +2680,395 @@
       event.target.value = ''; // 清空 input
     }
 
+    // 压缩图片功能
+    async function compressImage(file, maxWidth = 500, maxHeight = 500, quality = 1) {
+      return new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+
+        img.onload = () => {
+          try {
+            let { width, height } = img;
+            console.log('图片加载成功，原始尺寸:', width, 'x', height, '文件名:', file.name);
+
+            // 检查图片尺寸是否有效
+            if (width <= 0 || height <= 0) {
+              console.warn('图片尺寸无效，返回原始文件:', file.name);
+              resolve(file);
+              return;
+            }
+
+            // 动态调整压缩参数
+            const minDimension = Math.min(width, height);
+            const dynamicMaxSize = Math.min(minDimension, maxWidth);
+            const dynamicQuality = file.size > 1000000 ? 0.8 : 0.9; // 大文件降低质量
+
+            if (width > dynamicMaxSize || height > dynamicMaxSize) {
+              const ratio = Math.min(dynamicMaxSize / width, dynamicMaxSize / height);
+              width = Math.round(width * ratio);
+              height = Math.round(height * ratio);
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+
+            // 绘制图片
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // 检查 canvas 是否有有效内容
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const hasContent = Array.from(imageData).some(pixel => pixel !== 0);
+            if (!hasContent) {
+              console.warn('Canvas 绘制内容为空，返回原始文件:', file.name);
+              resolve(file);
+              return;
+            }
+
+            console.log('开始将图片转换为 Blob，尺寸:', width, 'x', height, '质量:', dynamicQuality);
+            canvas.toBlob(
+              (blob) => {
+                // **核心修改：直接返回 Blob 对象，不再创建新的 File 对象**
+                if (!blob || blob.size === 0) {
+                  console.warn('压缩图片失败，Blob 为空或大小为 0，尝试 PNG 格式:', file.name);
+                  // 尝试以 PNG 格式重新压缩
+                  canvas.toBlob(
+                    (pngBlob) => {
+                      if (!pngBlob || pngBlob.size === 0) {
+                        console.warn('PNG 压缩也失败，返回原始文件:', file.name);
+                        resolve(file);
+                        return;
+                      }
+                      console.log('PNG 压缩成功，大小:', pngBlob.size, '文件名:', file.name);
+                      resolve(pngBlob);
+                    },
+                    'image/png',
+                    0.9
+                  );
+                  return;
+                }
+
+                console.log('图片压缩成功，大小:', blob.size, '文件名:', file.name);
+                resolve(blob);
+              },
+              file.type,
+              dynamicQuality
+            );
+          } catch (error) {
+            console.error('图片压缩过程出错:', file.name, error);
+            resolve(file); // 压缩失败返回原始文件
+          }
+        };
+
+        img.onerror = () => {
+          console.error('图片加载失败:', file.name);
+          resolve(file); // 图片加载失败返回原始文件
+        };
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          img.src = e.target.result;
+        };
+        reader.onerror = () => {
+          console.error('文件读取失败:', file.name);
+          resolve(file); // 文件读取失败返回原始文件
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+
+    // 改进的文件保存方法
+    async function saveFileToDataDirectory(file, originalFileName) {
+      // 首先尝试直接保存 File 对象
+      try {
+        console.log('尝试直接保存 File 对象...');
+        return await saveFileDirectly(file, originalFileName);
+      } catch (directError) {
+        console.warn('直接保存失败，尝试 ArrayBuffer 方法:', directError.message);
+        
+        // 如果直接保存失败，尝试 ArrayBuffer 方法
+        try {
+          return await saveFileWithArrayBuffer(file, originalFileName);
+        } catch (arrayBufferError) {
+          console.error('ArrayBuffer 方法也失败:', arrayBufferError.message);
+          throw new Error(`文件保存失败: ${arrayBufferError.message}`);
+        }
+      }
+    }
+
+    // 直接保存文件的方法
+    function saveFileDirectly(file, originalFileName) {
+      return new Promise((resolve, reject) => {
+        if (!window.cordova || !window.cordova.file) {
+          reject(new Error('Cordova file plugin not available'));
+          return;
+        }
+
+        console.log('开始直接保存文件到数据目录...');
+
+        window.resolveLocalFileSystemURL(cordova.file.dataDirectory, (dirEntry) => {
+          // 创建目录结构
+          createDirectoryStructure(dirEntry, originalFileName)
+            .then(({ sessionDir, fileName }) => {
+              // 创建文件
+              sessionDir.getFile(fileName, { create: true }, (fileEntry) => {
+                // 写入文件
+                fileEntry.createWriter((fileWriter) => {
+                  fileWriter.onwriteend = () => {
+                    console.log('文件直接保存成功:', fileEntry.nativeURL);
+                    resolve(fileEntry.nativeURL);
+                  };
+                  
+                  fileWriter.onerror = (e) => {
+                    console.error('文件写入失败:', e);
+                    reject(new Error(`文件写入失败`));
+                  };
+                  
+                  // 直接写入 File 对象
+                  fileWriter.write(file);
+                  
+                }, (error) => {
+                  reject(new Error(`创建文件写入器失败: ${error.message || error}`));
+                });
+              }, (error) => {
+                reject(new Error(`创建文件失败: ${error.message || error}`));
+              });
+            })
+            .catch(reject);
+        }, (error) => {
+          reject(new Error(`获取数据目录失败: ${error.message || error}`));
+        });
+      });
+    }
+
+    // 使用 ArrayBuffer 的方法 - 添加更多错误处理
+    async function saveFileWithArrayBuffer(file, originalFileName) {
+      return new Promise((resolve, reject) => {
+        console.log('开始读取文件为 ArrayBuffer...', '文件名:', file.name, '大小:', file.size);
+        
+        // 创建 FileReader
+        const reader = new FileReader();
+        
+        // 设置超时
+        const timeout = setTimeout(() => {
+          reader.abort();
+          reject(new Error('文件读取超时'));
+        }, 30000); // 30秒超时
+        
+        reader.onload = (e) => {
+          clearTimeout(timeout);
+          
+          try {
+            const arrayBuffer = e.target.result;
+            
+            if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+              reject(new Error('读取到的 ArrayBuffer 为空'));
+              return;
+            }
+            
+            console.log('文件读取为ArrayBuffer成功，大小:', arrayBuffer.byteLength);
+            
+            // 保存ArrayBuffer到文件系统
+            saveArrayBufferToFile(arrayBuffer, originalFileName)
+              .then(resolve)
+              .catch(reject);
+          } catch (processError) {
+            reject(new Error(`处理ArrayBuffer失败: ${processError.message}`));
+          }
+        };
+        
+        reader.onerror = (e) => {
+          clearTimeout(timeout);
+          console.error('FileReader错误详情:', e);
+          console.error('FileReader状态:', reader.readyState);
+          console.error('FileReader错误对象:', reader.error);
+          
+          let errorMessage = '读取文件失败';
+          if (reader.error) {
+            errorMessage += `: ${reader.error.message || reader.error.name || 'Unknown error'}`;
+          }
+          
+          reject(new Error(errorMessage));
+        };
+        
+        reader.onabort = () => {
+          clearTimeout(timeout);
+          reject(new Error('文件读取被中断'));
+        };
+        
+        // 开始读取
+        try {
+          reader.readAsArrayBuffer(file);
+        } catch (readError) {
+          clearTimeout(timeout);
+          reject(new Error(`启动文件读取失败: ${readError.message}`));
+        }
+      });
+    }
+
+    // 创建目录结构的辅助函数
+    function createDirectoryStructure(dirEntry, originalFileName) {
+      return new Promise((resolve, reject) => {
+        // 确保 currentSessionId 存在
+        if (!currentSessionId) {
+          reject(new Error('currentSessionId 未定义，请确保会话ID已初始化'));
+          return;
+        }
+        
+        console.log('开始创建目录结构，会话ID:', currentSessionId);
+        
+        // 创建 chat_files 目录
+        dirEntry.getDirectory('chat_files', { create: true }, (chatFilesDir) => {
+          console.log('chat_files 目录创建/获取成功:', chatFilesDir.nativeURL);
+          
+          // 创建当前会话目录 (使用 currentSessionId)
+          chatFilesDir.getDirectory(currentSessionId, { create: true }, (sessionDir) => {
+            console.log('会话目录创建/获取成功:', sessionDir.nativeURL);
+            console.log('完整路径结构: dataDirectory/chat_files/' + currentSessionId);
+            
+            // 生成安全的文件名
+            const safeName = originalFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const fileName = `${Date.now()}_${safeName}`;
+            
+            console.log('将保存文件:', fileName);
+            resolve({ sessionDir, fileName });
+          }, (error) => {
+            console.error('创建会话目录失败，会话ID:', currentSessionId, '错误:', error);
+            reject(new Error(`创建会话目录失败 (${currentSessionId}): ${error.message || error}`));
+          });
+        }, (error) => {
+          console.error('创建chat_files目录失败:', error);
+          reject(new Error(`创建chat_files目录失败: ${error.message || error}`));
+        });
+      });
+    }
+
+    // 保存ArrayBuffer到文件系统 - 改进版本
+    function saveArrayBufferToFile(arrayBuffer, originalFileName) {
+      return new Promise((resolve, reject) => {
+        if (!window.cordova || !window.cordova.file) {
+          reject(new Error('Cordova file plugin not available'));
+          return;
+        }
+
+        console.log('开始保存ArrayBuffer到数据目录，大小:', arrayBuffer.byteLength);
+
+        window.resolveLocalFileSystemURL(cordova.file.dataDirectory, (dirEntry) => {
+          console.log('数据目录获取成功:', dirEntry.nativeURL);
+          
+          createDirectoryStructure(dirEntry, originalFileName)
+            .then(({ sessionDir, fileName }) => {
+              console.log('准备创建文件:', fileName);
+              
+              // 创建文件
+              sessionDir.getFile(fileName, { create: true, exclusive: false }, (fileEntry) => {
+                console.log('文件入口创建成功:', fileEntry.nativeURL);
+                
+                // 写入文件
+                fileEntry.createWriter((fileWriter) => {
+                  let writeCompleted = false;
+                  
+                  fileWriter.onwritestart = () => {
+                    console.log('开始写入ArrayBuffer...');
+                  };
+                  
+                  fileWriter.onwriteend = () => {
+                    if (!writeCompleted) {
+                      writeCompleted = true;
+                      console.log('ArrayBuffer文件写入成功:', fileEntry.nativeURL, '大小:', fileWriter.length);
+                      resolve(fileEntry.nativeURL);
+                    }
+                  };
+                  
+                  fileWriter.onerror = (e) => {
+                    console.error('ArrayBuffer写入失败:', e);
+                    console.error('错误代码:', e.target?.error?.code);
+                    console.error('FileWriter状态:', fileWriter.readyState);
+                    
+                    if (!writeCompleted) {
+                      writeCompleted = true;
+                      
+                      let errorMsg = 'ArrayBuffer文件写入失败';
+                      if (e.target?.error?.code) {
+                        errorMsg += ` (错误代码: ${e.target.error.code})`;
+                      }
+                      reject(new Error(errorMsg));
+                    }
+                  };
+                  
+                  fileWriter.onabort = () => {
+                    if (!writeCompleted) {
+                      writeCompleted = true;
+                      reject(new Error('ArrayBuffer写入被中止'));
+                    }
+                  };
+                  
+                  try {
+                    // 创建Blob并写入
+                    const blob = new Blob([arrayBuffer]);
+                    console.log('创建Blob成功，大小:', blob.size);
+                    
+                    // 先清空文件，再写入新内容
+                    fileWriter.truncate(0);
+                    fileWriter.onwriteend = () => {
+                      fileWriter.onwriteend = () => {
+                        if (!writeCompleted) {
+                          writeCompleted = true;
+                          console.log('ArrayBuffer写入完成:', fileEntry.nativeURL);
+                          resolve(fileEntry.nativeURL);
+                        }
+                      };
+                      
+                      // 写入Blob数据
+                      fileWriter.write(blob);
+                    };
+                    
+                  } catch (blobError) {
+                    console.error('创建Blob失败:', blobError);
+                    if (!writeCompleted) {
+                      writeCompleted = true;
+                      reject(new Error(`创建Blob失败: ${blobError.message}`));
+                    }
+                  }
+                  
+                }, (error) => {
+                  console.error('创建FileWriter失败:', error);
+                  reject(new Error(`创建文件写入器失败: ${error.message || error}`));
+                });
+              }, (error) => {
+                console.error('创建文件失败:', error);
+                reject(new Error(`创建文件失败: ${error.message || error}`));
+              });
+            })
+            .catch(reject);
+        }, (error) => {
+          console.error('获取数据目录失败:', error);
+          reject(new Error(`获取数据目录失败: ${error.message || error}`));
+        });
+      });
+    }
+
+    // 异步读取文件并返回 DataURL（新增函数，用于解决 ReferenceError）
+    function readFileForPreview(filePath) {
+        return new Promise((resolve, reject) => {
+            if (!window.cordova || !window.resolveLocalFileSystemURL) {
+                return reject(new Error("Cordova 文件系统不可用"));
+            }
+            
+            window.resolveLocalFileSystemURL(filePath, (fileEntry) => {
+                fileEntry.file((file) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error("文件读取失败"));
+                    reader.readAsDataURL(file);
+                }, (error) => reject(new Error(`无法获取文件: ${error.message || error}`)));
+            }, (error) => reject(new Error(`无法解析文件路径: ${error.message || error}`)));
+        });
+    }
+
     function showImagePreview(filePath) {
+      // 创建遮罩层
       const overlay = document.createElement('div');
       overlay.style.position = 'fixed';
       overlay.style.top = '0';
@@ -2606,19 +3082,85 @@
       overlay.style.zIndex = '9999';
       overlay.style.cursor = 'zoom-out';
 
-      const img = document.createElement('img');
-      img.src = filePath;
-      img.style.maxWidth = '90%';
-      img.style.maxHeight = '90%';
-      img.style.borderRadius = '8px';
-      img.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+      // 创建加载提示
+      const loadingDiv = document.createElement('div');
+      loadingDiv.style.color = 'white';
+      loadingDiv.style.fontSize = '16px';
+      loadingDiv.textContent = '加载中...';
+      overlay.appendChild(loadingDiv);
 
-      overlay.appendChild(img);
       document.body.appendChild(overlay);
 
-      overlay.addEventListener('click', () => {
-        document.body.removeChild(overlay);
+      // 读取文件并显示
+      readFileForPreview(filePath).then((dataURL) => {
+        const img = document.createElement('img');
+        img.src = dataURL;
+        img.style.maxWidth = '90%';
+        img.style.maxHeight = '90%';
+        img.style.borderRadius = '8px';
+        img.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+
+        // 替换加载提示
+        overlay.removeChild(loadingDiv);
+        overlay.appendChild(img);
+      }).catch((error) => {
+        console.error('图片预览失败:', error);
+        loadingDiv.textContent = '预览失败';
+        setTimeout(() => {
+          if (document.body.contains(overlay)) {
+            document.body.removeChild(overlay);
+          }
+        }, 2000);
       });
+
+      overlay.addEventListener('click', () => {
+        if (document.body.contains(overlay)) {
+          document.body.removeChild(overlay);
+        }
+      });
+    }
+
+    // 使用系统默认程序打开文件
+    function openFileWithSystem(filePath) {
+      // 在Cordova中，可以使用cordova-plugin-file-opener2插件
+      if (window.cordova && cordova.plugins && cordova.plugins.fileOpener2) {
+        cordova.plugins.fileOpener2.open(
+          filePath,
+          getMimeType(filePath),
+          {
+            error: function(e) {
+              console.error('打开文件失败:', e);
+              alert('无法打开文件');
+            },
+            success: function() {
+              console.log('文件打开成功');
+            }
+          }
+        );
+      } else {
+        console.warn('文件打开器插件不可用');
+        alert('文件打开功能不可用');
+      }
+    }
+
+    // 获取文件MIME类型
+    function getMimeType(fileName) {
+      const ext = fileName.split('.').pop().toLowerCase();
+      const mimeMap = {
+        'txt': 'text/plain',
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'mp3': 'audio/mpeg',
+        'mp4': 'video/mp4',
+        'zip': 'application/zip',
+        'rar': 'application/x-rar-compressed'
+      };
+      return mimeMap[ext] || 'application/octet-stream';
     }
 
     function updateUploadedFilesDisplay() {
@@ -2644,10 +3186,13 @@
         fileItem.className = 'file-item';
 
         const fileIcon = getFileIcon(file.name);
+        const sizeInfo = file.originalSize !== file.size ? 
+          `${formatFileSize(file.size)} (原始: ${formatFileSize(file.originalSize)})` : 
+          formatFileSize(file.size);
 
         fileItem.innerHTML = `
-          <span class="file-icon" style="margin-right: 4px; cursor: pointer;" title="点击打开">${fileIcon}</span>
-          <span class="file-name" title="${file.name}" style="cursor: pointer;">${file.name}</span>
+          <span class="file-icon" style="margin-right: 4px; cursor: pointer;" title="点击预览">${fileIcon}</span>
+          <span class="file-name" title="${file.name} - ${sizeInfo}" style="cursor: pointer;">${file.name}</span>
           <button class="file-remove-btn" data-index="${index}" title="删除文件">×</button>
         `;
 
@@ -2663,7 +3208,7 @@
             if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
               showImagePreview(file.path); // ✅ 应用内预览
             } else {
-              ipcRenderer.invoke('open-file', file.path); // ✅ 系统默认程序
+              openFileWithSystem(file.path); // ✅ 系统默认程序
             }
           });
         });
@@ -2677,6 +3222,15 @@
 
         list.appendChild(fileItem);
       });
+    }
+
+    // 格式化文件大小
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     // 添加文件图标函数
@@ -2703,16 +3257,26 @@
       const file = uploadedFiles[index];
       
       try {
-        await ipcRenderer.invoke('remove-uploaded-file', {
-          filePath: file.path,
-          sessionId: currentSessionId
-        });
-        
+        await deleteFileFromDataDirectory(file.path);
         uploadedFiles.splice(index, 1);
         updateUploadedFilesDisplay();
+        console.log('文件删除成功:', file.name);
       } catch (error) {
         console.error('删除文件失败:', error);
+        alert(`删除文件失败: ${file.name}`);
       }
+    }
+
+    // 从文件系统删除文件
+    function deleteFileFromDataDirectory(filePath) {
+      return new Promise((resolve, reject) => {
+        window.resolveLocalFileSystemURL(filePath, (fileEntry) => {
+          fileEntry.remove(() => {
+            console.log('文件已删除:', filePath);
+            resolve();
+          }, reject);
+        }, reject);
+      });
     }
   </script>
 </body>

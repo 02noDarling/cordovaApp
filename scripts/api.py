@@ -35,29 +35,6 @@ def get_image_data_url(image_file: str, image_format: str) -> str:
         exit()
     return f"data:image/{image_format};base64,{image_data}"
 
-def resize_image(file_path, max_size=(500, 500)):
-    from PIL import Image
-    import os
-    """
-    将指定图片缩放到不超过 500x500 分辨率（保持比例）。
-    :param file_path: str，图片文件路径
-    :param max_size: tuple，最大尺寸 (宽, 高)
-    """
-    if not os.path.exists(file_path) or not os.path.isfile(file_path):
-        print(f"文件不存在: {file_path}", file=sys.stderr)
-        return
-    
-    try:
-        with Image.open(file_path) as img:
-            # 缩放（保持比例）
-            img.thumbnail(max_size, Image.Resampling.LANCZOS)
-            
-            # 覆盖保存
-            img.save(file_path)
-            print(f"已处理: {file_path}", file=sys.stderr)
-    except Exception as e:
-        print(f"跳过 {file_path}: {e}", file=sys.stderr)
-
 def llm_api(prompt, history=None):
     """调用大模型API"""
     # 构建对话历史
@@ -80,12 +57,12 @@ def llm_api(prompt, history=None):
     if history:
         recent_history = history[-HISTORY_LEN:]  # 最近的对话
         
-        # 处理图片（如果有的话）
-        for entry in recent_history:
-            if entry.get("files_path"):
-                for item in entry["files_path"]:
-                    if item.endswith(('.jpg', '.png', '.jpeg')):
-                        resize_image(item.replace("\\", "/"))
+        # # 处理图片（如果有的话）
+        # for entry in recent_history:
+        #     if entry.get("files_path"):
+        #         for item in entry["files_path"]:
+        #             if item.endswith(('.jpg', '.png', '.jpeg')):
+        #                 resize_image(item.replace("\\", "/"))
         
         # 构建消息历史
         for entry in recent_history:
@@ -98,16 +75,24 @@ def llm_api(prompt, history=None):
                 # 添加图片（如果有的话）
                 if entry.get("files_path"):
                     for item in entry["files_path"]:
-                        if item.endswith(('.jpg', '.png', '.jpeg')):
-                            image_url = get_image_data_url(item.replace("\\", "/"), item.split('.')[-1])
-                            if image_url:
-                                content.append({
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": image_url,
-                                        "detail": "low"
-                                    },
-                                })
+                        if item.startswith('data:image/'):
+                            content.append({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": item,
+                                    "detail": "low"
+                                },
+                            })
+                        # if item.endswith(('.jpg', '.png', '.jpeg')):
+                        #     image_url = get_image_data_url(item.replace("\\", "/"), item.split('.')[-1])
+                        #     if image_url:
+                        #         content.append({
+                        #             "type": "image_url",
+                        #             "image_url": {
+                        #                 "url": image_url,
+                        #                 "detail": "low"
+                        #             },
+                        #         })
                 
                 messages.append({
                     "role": entry['role'],
