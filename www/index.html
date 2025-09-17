@@ -396,8 +396,15 @@
       color: #4CAF50;
     }
     
-    /* 当输入框聚焦时，通话按钮样式变化 */
+    /* 当输入框聚焦时，语音按钮样式变化 */
     #chat-input:focus ~ #call-button {
+      background: rgba(33, 150, 243, 0.1);
+      border-color: #2196F3;
+      color: #2196F3;
+    }
+
+    /* 当输入框聚焦时，语音按钮样式变化 */
+    #chat-input:focus ~ #video-button {
       background: rgba(33, 150, 243, 0.1);
       border-color: #2196F3;
       color: #2196F3;
@@ -667,109 +674,36 @@
       transform: scale(0.95);
     }
 
-    /* 通话页面样式 */
-    #call-page {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100vh;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      z-index: 10000;
-      flex-direction: column;  /* 改为垂直布局 */
-      align-items: center;
-      transition: all 0.3s ease;
-      box-sizing: border-box;
-      padding-top: 40px;  /* 添加顶部内边距 */
-      padding-bottom: 120px;  /* 为底部按钮留空间 */
-    }
-
-    #call-avatar-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      min-height: 0;    /* 添加这行 */
-      padding: 20px;    /* 添加内边距 */
-    }
-
-    #call-avatar {
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      border: 4px solid rgba(255,255,255,0.3);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-    } 
-
-    #call-controls {
-      position: fixed;  /* 改为fixed */
-      bottom: 0;        /* 固定到底部 */
-      left: 0;
-      right: 0;
-      padding: 20px;
-      display: flex;
-      justify-content: center;
-      gap: 40px;
-      z-index: 1000;
-    }
-
-    .call-control-btn {
-      width: 60px;
-      height: 60px;
-      border: none;
+    #video-button {
+      position: absolute;
+      left: 62px; /* 调整位置，让它紧贴上传按钮右侧 */
+      bottom: 4px;
+      width: 24px;
+      height: 24px;
+      background: rgba(33, 150, 243, 0.9);
+      border: 1px solid rgba(33, 150, 243, 0.8);
       border-radius: 50%;
       color: white;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
       transition: all 0.2s;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      z-index: 10;
+      font-size: 12px;
+      backdrop-filter: blur(2px);
     }
 
-    #end-call-btn {
-      background: #f44336;
+    #video-button:hover {
+      background: rgba(25, 118, 210, 0.95);
+      color: white;
+      border-color: #1976D2;
+      transform: scale(1.1);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
-    #end-call-btn:hover {
-      background: #d32f2f;
-      transform: scale(1.05);
-    }
-
-    #video-call-btn {
-      background: #4CAF50;
-    }
-
-    #video-call-btn:hover {
-      background: #45a049;
-      transform: scale(1.05);
-    }
-
-    .call-message {
-      padding: 8px 0;
-      max-width: 100%;
-      word-wrap: break-word;
-      font-size: 16px;
-      line-height: 1.5;
-      opacity: 0;
-      transform: translateY(20px);
-      animation: slideInUp 0.5s ease forwards;
-      text-align: left;  /* 左对齐 */
-      white-space: pre-wrap;  /* 支持换行 */
-    }
-
-    .call-message.user {
-      color: #ffffff;  /* 用户消息白色 */
-    }
-
-    .call-message.bot {
-      color: #333;  /* AI回复浅灰色 */
-    }
-
-    .call-message.fade-out {
-      animation: fadeOutDown 0.5s ease forwards;
+    #video-button:active {
+      transform: scale(0.95);
     }
 
     @keyframes slideInUp {
@@ -825,21 +759,6 @@
       
       .bot-message {
         margin-right: 30px;
-      }
-
-      #call-avatar {
-        width: 150px;
-        height: 150px;
-      }
-      
-      .call-control-btn {
-        width: 50px;
-        height: 50px;
-        font-size: 20px;
-      }
-      
-      #call-controls {
-        gap: 30px;
       }
     }
 
@@ -940,6 +859,9 @@
           <button id="call-button" title="语音通话">
             <span style="font-size: 16px;">📞</span>
           </button>
+          <button id="video-button" title="视频通话">
+            <span style="font-size: 16px;">📹</span>
+          </button>
           <input type="file" id="file-input" multiple accept=".txt,.png,.jpg,.jpeg,.gif,.pdf,.doc,.docx" style="display: none;">
         </div>
         <button id="mic-button" title="点击开始录音"><span>🎙️</span></button>
@@ -952,38 +874,6 @@
         <canvas id="waveform" style="width:100%; height:60px;"></canvas>
         <button id="stop-recording" style="margin-top:10px; padding:5px 15px;">结束录音</button>
       </div>
-    </div>
-  </div>
-
-  <!-- 通话页面 -->
-  <div id="call-page">
-    <div id="call-avatar-container">
-      <img id="call-avatar" src="" alt="AI女友">
-      <p id="call-timer" style="
-        color: white;
-        font-size: 20px;
-        font-weight: bold;
-        margin-top: 10px;">00:00</p>
-      <p id="call-status" style="
-        color: #4CAF50; 
-        font-weight: bold; 
-        margin-top: 5px; 
-        display: none;">聆听中</p>
-      <div id="call-messages-container" style="
-        width: 90%;
-        max-width: 500px;
-        flex: 1;
-        overflow-y: auto;
-        padding: 20px 0;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        margin-top: 30px;">
-    </div>
-    </div>
-    <div id="call-controls">
-      <button id="end-call-btn" class="call-control-btn" title="结束通话">📞</button>
-      <button id="video-call-btn" class="call-control-btn" title="视频通话">📹</button>
     </div>
   </div>
 
@@ -3495,600 +3385,20 @@
 
     // AI通话部分 - 优化版本
     function initCallFeature() {
-      // 全局变量来管理计时器
-      let callTimerInterval;
-      let callStartTime;
 
       const callButton = document.getElementById('call-button');
-      const callPage = document.getElementById('call-page');
-      const endCallBtn = document.getElementById('end-call-btn');
-      const videoCallBtn = document.getElementById('video-call-btn');
+      const videoCallBtn = document.getElementById('video-button');
       
       // 进入通话页面
       callButton.addEventListener('click', () => {
-        enterCallPage();
+        // 导航到ai语音页面
+        window.location.href = 'phone_call.html';
       });
-      
-      // 结束通话
-      endCallBtn.addEventListener('click', () => {
-        exitCallPage();
-      });
-      
-      // 视频通话按钮（暂时只做提示）
+
       videoCallBtn.addEventListener('click', () => {
-        console.log('视频通话功能待开发');
-        // 这里可以添加震动反馈
-        if (navigator.vibrate) {
-          navigator.vibrate(100);
-        }
+        // 导航到视频通话页面
+        window.location.href = 'video_call.html';
       });
-    }
-
-    function enterCallPage() {
-      const callPage = document.getElementById('call-page');
-      const callAvatar = document.getElementById('call-avatar');
-      const callTimer = document.getElementById('call-timer');
-      
-      // 这里设置AI女友的头像图片路径
-      callAvatar.src = './img/icon.png';
-      
-      callPage.style.display = 'flex';
-      
-      // 添加进入动画
-      callPage.style.opacity = '0';
-      callPage.style.transform = 'scale(0.9)';
-      setTimeout(() => {
-        callPage.style.transition = 'all 0.3s ease';
-        callPage.style.opacity = '1';
-        callPage.style.transform = 'scale(1)';
-      }, 10);
-
-      // 启动计时器
-      callStartTime = Date.now();
-      callTimer.textContent = '00:00';
-      callTimerInterval = setInterval(() => {
-        const elapsedTime = Date.now() - callStartTime;
-        const seconds = Math.floor(elapsedTime / 1000) % 60;
-        const minutes = Math.floor(elapsedTime / 1000 / 60);
-        
-        const formattedTime = 
-          `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        
-        callTimer.textContent = formattedTime;
-      }, 1000);
-
-      // 启动录音和通话逻辑
-      startCallConversation();
-    }
-
-    function exitCallPage() {
-      const callPage = document.getElementById('call-page');
-      const callTimer = document.getElementById('call-timer');
-
-      // 停止录音和通话逻辑
-      stopCallConversation();
-
-      // 停止计时器
-      if (callTimerInterval) {
-        clearInterval(callTimerInterval);
-        callTimerInterval = null;
-      }
-      callTimer.textContent = '00:00';
-      
-      // 添加退出动画
-      callPage.style.transition = 'all 0.3s ease';
-      callPage.style.opacity = '0';
-      callPage.style.transform = 'scale(0.9)';
-      
-      setTimeout(() => {
-        callPage.style.display = 'none';
-        callPage.style.transition = '';
-      }, 300);
-    }
-
-    // ========== 通话状态管理 ==========
-    class CallManager {
-      constructor() {
-        this.isCallActive = false;
-        this.isProcessing = false;
-        this.mediaRecorder = null;
-        this.audioStream = null;
-        this.audioContext = null;
-        this.vadCheckInterval = null;
-        this.silenceTimer = null;
-        this.audioChunks = [];
-        this.conversationHistory = [];
-        this.analyser = null;
-        this.hasDetectedSpeech = false; // 新增：标记是否检测到过语音
-        
-        // 配置参数
-        this.SILENCE_THRESHOLD = -40; // 静音阈值（分贝）
-        this.SILENCE_DURATION = 50; // 静音持续时间（毫秒）
-        this.SPEECH_THRESHOLD = -30; // 语音检测阈值（分贝）
-      }
-
-      // 重置所有状态
-      reset() {
-        this.isCallActive = false;
-        this.isProcessing = false;
-        this.hasDetectedSpeech = false;
-        this.audioChunks = [];
-        this.conversationHistory = [];
-        
-        // 清理定时器
-        if (this.vadCheckInterval) {
-          clearInterval(this.vadCheckInterval);
-          this.vadCheckInterval = null;
-        }
-        if (this.silenceTimer) {
-          clearTimeout(this.silenceTimer);
-          this.silenceTimer = null;
-        }
-        
-        // 停止录音
-        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-          this.mediaRecorder.stop();
-        }
-        this.mediaRecorder = null;
-        
-        // 关闭音频流
-        if (this.audioStream) {
-          this.audioStream.getTracks().forEach(track => track.stop());
-          this.audioStream = null;
-        }
-        
-        // 关闭音频上下文
-        if (this.audioContext && this.audioContext.state !== 'closed') {
-          this.audioContext.close();
-          this.audioContext = null;
-        }
-        
-        this.analyser = null;
-      }
-
-      // 检查通话是否处于活动状态
-      isActive() {
-        return this.isCallActive;
-      }
-
-      // 开始通话
-      async start() {
-        if (this.isCallActive) {
-          console.warn('通话已经在进行中');
-          return;
-        }
-
-        this.reset(); // 确保状态干净
-        this.isCallActive = true;
-        
-        const callStatus = document.getElementById('call-status');
-        const callMessagesContainer = document.getElementById('call-messages-container');
-
-        // 清空之前的对话
-        callMessagesContainer.innerHTML = '';
-
-        try {
-          // this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          this.audioStream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true
-          }
-        });
-          await this.initializeAudioProcessing();
-          this.startListening();
-        } catch (error) {
-          console.error('获取麦克风失败:', error);
-          alert('无法启用麦克风，请检查权限设置。');
-          this.reset();
-          exitCallPage();
-        }
-      }
-
-      // 停止通话
-      stop() {
-        console.log('停止通话');
-        this.reset();
-        
-        const callStatus = document.getElementById('call-status');
-        callStatus.style.display = 'none';
-      }
-
-      // 初始化音频处理
-      async initializeAudioProcessing() {
-        // this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: 16000
-        });
-        
-        // 设置音频分析
-        const source = this.audioContext.createMediaStreamSource(this.audioStream);
-        this.analyser = this.audioContext.createAnalyser();
-        this.analyser.fftSize = 256;
-        source.connect(this.analyser);
-      }
-
-      // 开始监听
-      startListening() {
-        if (!this.isCallActive || this.isProcessing) {
-          return;
-        }
-
-        console.log('开始监听...');
-        const callStatus = document.getElementById('call-status');
-        
-        // 重置状态
-        this.audioChunks = [];
-        this.hasDetectedSpeech = false;
-
-        // 设置录音器选项
-        // 设置MediaRecorder
-        const options = {
-          mimeType: 'audio/webm;codecs=opus'
-        };
-        
-        // 检查浏览器支持的格式
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-          options.mimeType = 'audio/webm';
-          if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-            options.mimeType = 'audio/mp4';
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-              delete options.mimeType;
-            }
-          }
-        }
-
-        this.mediaRecorder = new MediaRecorder(this.audioStream, options);
-
-        this.mediaRecorder.ondataavailable = event => {
-          if (this.isCallActive && event.data && event.data.size > 0) {
-            console.log(`收到音频数据块: ${event.data.size} bytes`);
-            this.audioChunks.push(event.data);
-          }
-        };
-
-        this.mediaRecorder.onstart = () => {
-          if (!this.isCallActive) return;
-          console.log('录音开始...');
-          callStatus.textContent = '等待语音输入...';
-          callStatus.style.display = 'block';
-        };
-
-        this.mediaRecorder.onstop = async () => {
-          if (!this.isCallActive) return;
-          console.log('录音结束');
-          
-          // 只有当检测到语音且有音频数据时才处理
-          if (this.hasDetectedSpeech && this.audioChunks.length > 0) {
-            const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-            const audioFile = new File([audioBlob], "recording.wav", { type: "audio/wav" });
-            
-            if (audioFile.size > -1) { // 确保音频文件不为空（至少1KB）
-              console.log('检测到有效语音，开始处理...');
-              await this.processAudio();
-            } else {
-              console.log('音频文件太小，跳过处理');
-              this.restartListening();
-            }
-          } else {
-            console.log('未检测到语音或无音频数据，重新开始监听');
-            this.restartListening();
-          }
-        };
-
-        // 启动录音
-        this.mediaRecorder.start();
-        
-        // 启动语音活动检测
-        this.startVAD();
-      }
-
-      // 启动语音活动检测（VAD）
-      startVAD() {
-        if (!this.analyser || !this.isCallActive) {
-          return;
-        }
-
-        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-        const callStatus = document.getElementById('call-status');
-
-        const checkAudio = () => {
-          if (!this.isCallActive || !this.mediaRecorder || 
-              this.mediaRecorder.state !== 'recording' || this.isProcessing) {
-            return;
-          }
-
-          this.analyser.getByteFrequencyData(dataArray);
-          let sum = dataArray.reduce((a, b) => a + b, 0);
-          let average = sum / dataArray.length;
-          let decibels = 20 * Math.log10(average / 255);
-
-          // 检测到语音（音量高于语音阈值）
-          if (decibels > this.SPEECH_THRESHOLD) {
-            if (!this.hasDetectedSpeech) {
-              console.log(`检测到语音开始: ${decibels.toFixed(2)} dB`);
-              this.hasDetectedSpeech = true;
-              callStatus.textContent = '正在聆听...';
-            }
-            
-            // 清除静音计时器
-            if (this.silenceTimer) {
-              clearTimeout(this.silenceTimer);
-              this.silenceTimer = null;
-            }
-          } 
-          // 检测到静音（音量低于静音阈值）且之前检测到过语音
-          else if (decibels < this.SILENCE_THRESHOLD && this.hasDetectedSpeech) {
-            if (!this.silenceTimer) {
-              console.log(`检测到静音开始: ${decibels.toFixed(2)} dB`);
-              this.silenceTimer = setTimeout(() => {
-                console.log('静音持续足够长时间，结束录音');
-                this.finishRecording();
-              }, this.SILENCE_DURATION);
-            }
-          }
-        };
-
-        // 清除之前的定时器
-        if (this.vadCheckInterval) {
-          clearInterval(this.vadCheckInterval);
-        }
-        
-        // 每100毫秒检查一次
-        this.vadCheckInterval = setInterval(checkAudio, 100);
-      }
-
-      // 结束当前录音
-      finishRecording() {
-        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-          console.log('停止录音...');
-          this.mediaRecorder.stop();
-        }
-        
-        // 清理VAD
-        if (this.vadCheckInterval) {
-          clearInterval(this.vadCheckInterval);
-          this.vadCheckInterval = null;
-        }
-        if (this.silenceTimer) {
-          clearTimeout(this.silenceTimer);
-          this.silenceTimer = null;
-        }
-      }
-
-      // 重新开始监听
-      restartListening() {
-        if (!this.isCallActive) return;
-        
-        setTimeout(() => {
-          if (this.isCallActive && !this.isProcessing) {
-            this.startListening();
-          }
-        }, 500);
-      }
-
-      // 处理音频
-      async processAudio() {
-        if (!this.isCallActive) return;
-        
-        this.isProcessing = true;
-        const callStatus = document.getElementById('call-status');
-
-        try {
-          // 1. 保存音频文件到本地
-          callStatus.textContent = '正在处理录音...';
-
-          // 创建音频blob
-          const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-          
-          // 转换为ArrayBuffer
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          
-          // 解码音频数据
-          const audioBufferObj = await this.audioContext.decodeAudioData(arrayBuffer);
-          
-          // 确保是16kHz单声道
-          const targetSampleRate = 16000;
-          let audioData = audioBufferObj.getChannelData(0);
-          
-          // 如果采样率不是16kHz，进行重采样
-          if (audioBufferObj.sampleRate !== targetSampleRate) {
-            audioData = downsampleBuffer(audioData, audioBufferObj.sampleRate, targetSampleRate);
-          }
-          
-          // 转换为16位PCM
-          const int16Data = floatTo16BitPCM(audioData);
-          
-          // 创建WAV文件
-          const wavBuffer = createWAVFile(int16Data, targetSampleRate);
-
-          const audioFilePath = await this.saveAudioFile(wavBuffer);
-
-          // 2. ASR (语音识别)
-          callStatus.textContent = '正在识别...';
-
-          const asrResult =await performASR(audioFilePath)
-          
-          if (!this.isCallActive) return; // 检查状态
-          
-          if (asrResult && asrResult.trim()) {
-            console.log('识别结果:', asrResult);
-            this.displayMessage(asrResult, 'user');
-
-            // 2. LLM (大模型)
-            callStatus.textContent = '思考中...';
-            const llmResponse = await this.getLlmResponse(asrResult);
-            
-            if (!this.isCallActive) return; // 检查状态
-            
-            if (llmResponse && llmResponse.trim()) {
-              // 3. TTS (文本转语音)
-              const audioBlob = await this.getTtsAudio(llmResponse);
-              
-              if (!this.isCallActive) return; // 检查状态
-              
-              if (audioBlob) {
-                console.log('AI 回复:', llmResponse);
-                this.displayMessage(llmResponse, 'bot');
-
-                callStatus.textContent = '播放中...';
-                await this.playAudioFromBlob(audioBlob);
-              }
-            }
-          } else {
-            console.log('没有识别到有效内容');
-          }
-          
-        } catch (error) {
-          console.error('处理音频时出错:', error);
-        } finally {
-          if (this.isCallActive) {
-            this.isProcessing = false;
-            callStatus.style.display = 'none';
-            this.restartListening();
-          }
-        }
-      }
-
-      // 保存音频文件到Cordova文件系统
-      async saveAudioFile(wavBuffer) {
-        return new Promise((resolve, reject) => {
-          if (!window.cordova || !window.cordova.file) {
-              reject(new Error('Cordova file plugin not available'));
-              return;
-          }
-
-          window.resolveLocalFileSystemURL(cordova.file.dataDirectory, (dirEntry) => {
-            dirEntry.getDirectory('audio_temp', { create: true }, (chatWavDir) => {
-              const fileName = `recording.wav`;
-              // 创建文件
-              chatWavDir.getFile(fileName, { create: true }, (fileEntry) => {
-                // 写入文件
-                fileEntry.createWriter((fileWriter) => {
-                  fileWriter.onwriteend = () => {
-                    console.log('音频文件保存成功:', fileEntry.nativeURL);
-                    resolve(fileEntry.nativeURL);
-                  };
-                  
-                  fileWriter.onerror = (e) => {
-                    console.error('文件写入失败:', e);
-                    reject(e);
-                  };
-                  
-                  // 将ArrayBuffer转换为Blob
-                  const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-                  fileWriter.write(blob);
-                });
-              }, reject);
-            }, reject);
-          }, reject);
-        });
-      }
-
-      // 显示消息
-      displayMessage(text, role) {
-        const container = document.getElementById('call-messages-container');
-        const messageEl = document.createElement('div');
-        messageEl.className = `call-message ${role}`;
-        if(role == 'user') messageEl.textContent = '我：'+text;
-        else messageEl.textContent = '02：'+text;  // textContent会自动处理\n换行
-        container.appendChild(messageEl);
-
-        // 自动滚动到底部
-        container.scrollTop = container.scrollHeight;
-
-        // 7秒后淡出消失
-        setTimeout(() => {
-          messageEl.classList.add('fade-out');
-          setTimeout(() => {
-            if (container.contains(messageEl)) {
-              container.removeChild(messageEl);
-            }
-          }, 500);
-        }, 20000);
-      }
-
-      async getLlmResponse(text) {
-        if (!this.isCallActive) return null;
-        
-        this.conversationHistory.push({ role: 'user', content: text });
-        try {
-          const response = await fetch(`${SERVER_URL}/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, history: this.conversationHistory })
-          });
-          const data = await response.json();
-          if (data.success) {
-            this.conversationHistory.push({ role: 'assistant', content: data.response });
-            return data.response;
-          }
-          return null;
-        } catch (error) {
-          console.error('LLM 请求失败:', error);
-          return null;
-        }
-      }
-
-      async getTtsAudio(text) {
-        if (!this.isCallActive) {
-          console.log('通话已停止，取消TTS请求');
-          return null;
-        }
-
-        try {
-          const response = await fetch(`${SERVER_URL}/tts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text })
-          });
-          return await response.blob();
-        } catch (error) {
-          console.error('TTS 请求失败:', error);
-          return null;
-        }
-      }
-
-      async playAudioFromBlob(audioBlob) {
-        if (!this.isCallActive) return;
-        
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        
-        return new Promise(resolve => {
-          audio.onended = () => {
-            URL.revokeObjectURL(audioUrl);
-            resolve();
-          };
-          audio.onerror = () => {
-            console.error('音频播放失败');
-            URL.revokeObjectURL(audioUrl);
-            resolve();
-          };
-          
-          // 检查通话状态
-          if (this.isCallActive) {
-            audio.play();
-          } else {
-            URL.revokeObjectURL(audioUrl);
-            resolve();
-          }
-        });
-      }
-    }
-
-    // ========== 全局实例 ==========
-    const callManager = new CallManager();
-
-    // ========== 导出的函数 ==========
-    async function startCallConversation() {
-      await callManager.start();
-    }
-
-    function stopCallConversation() {
-      callManager.stop();
     }
 
   </script>

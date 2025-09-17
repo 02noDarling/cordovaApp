@@ -1,5 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.example.electronandroidapp" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+<widget id="com.example.electronandroidapp" version="1.0.0" 
+        xmlns="http://www.w3.org/ns/widgets" 
+        xmlns:cdv="http://cordova.apache.org/ns/1.0" 
+        xmlns:android="http://schemas.android.com/apk/res/android">
     <name>02小助手</name>
     <description>Sample Apache Cordova App</description>
     <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
@@ -24,5 +27,12 @@
         <icon src="resources/android/icon/drawable-xhdpi-icon.png" density="xhdpi" />
         <icon src="resources/android/icon/drawable-xxhdpi-icon.png" density="xxhdpi" />
         <icon src="resources/android/icon/drawable-xxxhdpi-icon.png" density="xxxhdpi" />
+
+        <!-- 确保 android 命名空间正确声明 -->
+        <config-file target="AndroidManifest.xml" parent="/manifest">
+            <uses-permission android:name="android.permission.CAMERA" />
+            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+        </config-file>
     </platform>
 </widget>

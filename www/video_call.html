@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>AI 视频通话</title>
+    <style>
+        html, body {
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100vh; /* 改为视口高度 */
+            background: #000;
+            /* 添加以下属性确保全屏 */
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        
+        #main-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            /* 添加以下属性 */
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+        
+        #camera-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        #cameraVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* 反向镜像，抵消摄像头的默认镜像效果 */
+            -webkit-transform: scaleX(-1); /* 兼容性 */
+        }
+        
+        #live2d-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+        }
+        
+        #live2d-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+            pointer-events: auto;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 3;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-button {
+            padding: 12px 18px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #end-call-btn { background: #f44336; }
+        #end-call-btn:hover { background: #d32f2f; }
+
+        #error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+            z-index: 10;
+            text-align: center;
+        }
+
+        /* 添加到现有CSS中 */
+        #call-messages-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 300px;
+            height: 60%;
+            overflow-y: auto;
+            z-index: 4;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 20px 0;
+        }
+
+        .call-message {
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 100%;
+            word-wrap: break-word;
+            font-size: 14px;
+            line-height: 1.4;
+            opacity: 1;
+            transition: opacity 0.5s ease-out;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .call-message.user {
+            background: rgba(255, 152, 0, 0.9); /* 橙色 */
+            color: white;
+            align-self: flex-end;
+            margin-left: 60px;
+        }
+
+        .call-message.bot {
+            background: rgba(33, 150, 243, 0.9); /* 蓝色 */
+            color: white;
+            align-self: flex-end;
+            margin-left: 60px;
+        }
+
+        .call-message.fade-out {
+            opacity: 0;
+        }
+
+        /* 滚动条样式 */
+        #call-messages-container::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #call-messages-container::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        #call-messages-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+
+        /* 缩放按钮容器 */
+        #zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 5;
+            display: flex;
+            flex-direction: row;
+            gap: 2px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 25px;
+            padding: 5px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .zoom-button {
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .zoom-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .zoom-button:active {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(0.95);
+        }
+
+        .zoom-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .zoom-button:disabled:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: none;
+        }
+
+        /* 缩放级别指示器 */
+        #zoom-level-indicator {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            z-index: 5;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 15px;
+            font-size: 14px;
+            font-weight: bold;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+    </style>
+    <!-- Live2DCubismCore script -->
+    <script src="./Core/live2dcubismcore.js"></script>
+    <!-- Build script -->
+    <script type="module" crossorigin src="/assets/index-BdKM-sSx.js"></script>
+    <script src="cordova.js"></script>
+</head>
+<body>
+    <div id="main-container">
+        <div id="camera-background">
+            <video id="cameraVideo" autoplay playsinline muted></video>
+        </div>
+        <div id="live2d-container"></div>
+        <div id="controls">
+            <button id="switchCameraBtn" class="control-button">🔄 切换摄像头</button>
+            <button id="backToVoiceBtn" class="control-button">💬 返回语音</button>
+            <button id="endCallBtn" class="control-button">📞 结束通话</button>
+        </div>
+        <div id="zoom-controls">
+            <button id="zoom-out-btn" class="zoom-button">-</button>
+            <button id="zoom-in-btn" class="zoom-button">+</button>
+        </div>
+        <div id="zoom-level-indicator">1.0x</div>
+        <div id="error-message"></div>
+    </div>
+
+    <!-- 通话页面 -->
+    <div id="call-page">
+        <div id="call-avatar-container">
+            <p id="call-timer" style="
+                color: white;
+                font-size: 20px;
+                font-weight: bold;
+                margin-top: 10px;">00:00</p>
+            <p id="call-status" style="
+                color: #4CAF50; 
+                font-weight: bold; 
+                margin-top: 5px; 
+                display: none;">聆听中</p>
+            <div id="call-messages-container"></div>
+        </div>
+    </div>
+    
+    <script>
+
+        const SERVER_URL = "https://121.43.116.49:5000";
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 观察 canvas 元素的添加
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.tagName === 'CANVAS') {
+                            const container = document.getElementById('live2d-container');
+                            if (container && node.parentElement === document.body) {
+                                container.appendChild(node);
+                                node.style.width = '100%';
+                                node.style.height = '100%';
+                            }
+                        }
+                    });
+                });
+            });
+            
+            observer.observe(document.body, { childList: true });
+        });
+
+        // 等待 Cordova 设备就绪
+        // document.addEventListener('deviceready', initializeCamera, false);
+
+        document.addEventListener('deviceready', () => {
+            // 原有的状态栏代码
+            if (window.StatusBar) {
+                StatusBar.overlaysWebView(true); // 改为true，让内容覆盖状态栏
+                StatusBar.hide(); // 隐藏状态栏
+            }
+            
+            // 强制全屏显示
+            if (window.AndroidFullScreen) {
+                AndroidFullScreen.immersiveMode(); // 改为沉浸式模式
+            }
+            
+            // 添加元标签设置视口
+            const viewport = document.querySelector('meta[name="viewport"]');
+            if (viewport) {
+                viewport.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no');
+            }
+
+            // 文件系统相关代码
+            console.log(window.cordova.file.dataDirectory);
+            
+            initializeCamera();
+
+            startCallConversation();
+        });
+        
+        // 如果不是 Cordova 环境，直接初始化
+        if (!window.cordova) {
+            document.addEventListener('DOMContentLoaded', initializeCamera);
+        }
+
+        function initializeCamera() {
+            const videoElement = document.getElementById('cameraVideo');
+            const errorMessage = document.getElementById('error-message');
+            let currentStream = null;
+            let cameraDevices = [];
+            let currentCameraIndex = 0;
+
+            let currentZoomScale = 1.0;
+            const minZoomScale = 1.0;
+            const maxZoomScale = 5.0;
+            const zoomStep = 0.2; // 每次缩放的步长
+
+            // 应用缩放变换
+            function applyZoomTransform() {
+                const videoElement = document.getElementById('cameraVideo');
+                const isFrontCamera = cameraDevices.length > 1 ? currentCameraIndex === 0 : true;
+                
+                // 保持前置摄像头的镜像效果
+                if (isFrontCamera) {
+                    videoElement.style.transform = `scaleX(-${currentZoomScale}) scaleY(${currentZoomScale})`;
+                    videoElement.style.webkitTransform = `scaleX(-${currentZoomScale}) scaleY(${currentZoomScale})`;
+                } else {
+                    videoElement.style.transform = `scale(${currentZoomScale})`;
+                    videoElement.style.webkitTransform = `scale(${currentZoomScale})`;
+                }
+                
+                // 更新按钮状态
+                updateZoomButtons();
+                
+                // 显示缩放级别
+                showZoomLevel();
+                
+                console.log(`应用缩放: ${currentZoomScale.toFixed(1)}x`);
+            }
+
+            // 更新缩放按钮状态
+            function updateZoomButtons() {
+                const zoomInBtn = document.getElementById('zoom-in-btn');
+                const zoomOutBtn = document.getElementById('zoom-out-btn');
+                
+                // 更新按钮可用状态
+                zoomInBtn.disabled = currentZoomScale >= maxZoomScale;
+                zoomOutBtn.disabled = currentZoomScale <= minZoomScale;
+            }
+
+            // 显示缩放级别
+            function showZoomLevel() {
+                const indicator = document.getElementById('zoom-level-indicator');
+                indicator.textContent = `${currentZoomScale.toFixed(1)}x`;
+                indicator.style.opacity = '1';
+                
+                // 2秒后隐藏
+                setTimeout(() => {
+                    indicator.style.opacity = '0';
+                }, 2000);
+            }
+
+            // 放大功能
+            function zoomIn() {
+                if (currentZoomScale < maxZoomScale) {
+                    currentZoomScale = Math.min(maxZoomScale, currentZoomScale + zoomStep);
+                    applyZoomTransform();
+                }
+            }
+
+            // 缩小功能  
+            function zoomOut() {
+                if (currentZoomScale > minZoomScale) {
+                    currentZoomScale = Math.max(minZoomScale, currentZoomScale - zoomStep);
+                    applyZoomTransform();
+                }
+            }
+
+            // 重置缩放
+            function resetZoom() {
+                currentZoomScale = minZoomScale;
+                applyZoomTransform();
+            }
+
+            // 绑定按钮事件（在 initializeCamera 函数的最后添加）
+            function initZoomControls() {
+                const zoomInBtn = document.getElementById('zoom-in-btn');
+                const zoomOutBtn = document.getElementById('zoom-out-btn');
+                
+                // 绑定点击事件
+                zoomInBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    zoomIn();
+                });
+                
+                zoomOutBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    zoomOut();
+                });
+                
+                // 绑定长按事件（连续缩放）
+                let zoomInterval;
+                
+                // 放大按钮长按
+                zoomInBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    zoomInterval = setInterval(() => {
+                        if (currentZoomScale < maxZoomScale) {
+                            zoomIn();
+                        } else {
+                            clearInterval(zoomInterval);
+                        }
+                    }, 150);
+                });
+                
+                zoomInBtn.addEventListener('touchend', () => {
+                    clearInterval(zoomInterval);
+                });
+                
+                zoomInBtn.addEventListener('touchcancel', () => {
+                    clearInterval(zoomInterval);
+                });
+                
+                // 缩小按钮长按
+                zoomOutBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    zoomInterval = setInterval(() => {
+                        if (currentZoomScale > minZoomScale) {
+                            zoomOut();
+                        } else {
+                            clearInterval(zoomInterval);
+                        }
+                    }, 150);
+                });
+                
+                zoomOutBtn.addEventListener('touchend', () => {
+                    clearInterval(zoomInterval);
+                });
+                
+                zoomOutBtn.addEventListener('touchcancel', () => {
+                    clearInterval(zoomInterval);
+                });
+                
+                // 初始化按钮状态
+                updateZoomButtons();
+                
+                console.log('缩放控件已初始化');
+            }
+
+            // 显示权限引导
+            function showPermissionGuide() {
+                const guide = `
+                    <h3>📷 需要摄像头权限</h3>
+                    <div class="permission-guide">
+                        <p><strong>请按以下步骤开启权限：</strong></p>
+                        <p>1. 点击"打开应用设置"按钮</p>
+                        <p>2. 找到"权限"或"应用权限"</p>
+                        <p>3. 找到"摄像头"或"相机"权限</p>
+                        <p>4. 点击开启权限</p>
+                        <p>5. 返回应用并点击"重试"</p>
+                    </div>
+                    <button onclick="openAppSettings()">打开应用设置</button>
+                    <button onclick="retryCamera()">重试</button>
+                    <button onclick="closeError()">关闭</button>
+                `;
+                
+                errorMessage.innerHTML = guide;
+                errorMessage.style.display = 'block';
+            }
+
+            // 显示错误信息
+            function showError(message) {
+                console.error(message);
+                if (message.includes('权限')) {
+                    showPermissionGuide();
+                } else {
+                    errorMessage.innerHTML = `<h3>❌ 错误</h3><p>${message}</p><button onclick="closeError()">关闭</button>`;
+                    errorMessage.style.display = 'block';
+                }
+            }
+
+            // 全局函数：打开应用设置
+            window.openAppSettings = function() {
+                if (window.cordova && cordova.plugins && cordova.plugins.settings) {
+                    cordova.plugins.settings.open(['application_details', 'application'], 
+                        () => console.log('设置页面已打开'),
+                        () => console.log('无法打开设置页面')
+                    );
+                } else if (window.plugins && window.plugins.intentShim) {
+                    // 备用方法：使用 intent
+                    window.plugins.intentShim.startActivity({
+                        action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
+                        uri: 'package:' + cordova.getAppVersion.getPackageName()
+                    });
+                } else {
+                    alert('请手动进入手机设置 → 应用管理 → 找到本应用 → 权限管理 → 开启摄像头权限');
+                }
+            };
+
+            // 全局函数：重试摄像头
+            window.retryCamera = function() {
+                closeError();
+                startCamera();
+            };
+
+            // 全局函数：关闭错误提示
+            window.closeError = function() {
+                errorMessage.style.display = 'none';
+            };
+
+            // 请求权限（Cordova 环境）
+            async function requestCameraPermission() {
+                return new Promise((resolve) => {
+                    if (window.cordova && cordova.plugins && cordova.plugins.permissions) {
+                        const permissions = cordova.plugins.permissions;
+                        permissions.checkPermission(
+                            permissions.CAMERA,
+                            (status) => {
+                                if (status.hasPermission) {
+                                    console.log('摄像头权限已获得');
+                                    resolve(true);
+                                } else {
+                                    permissions.requestPermission(
+                                        permissions.CAMERA,
+                                        (result) => {
+                                            console.log('权限请求结果:', result.hasPermission);
+                                            resolve(result.hasPermission);
+                                        },
+                                        () => {
+                                            console.error('权限请求失败');
+                                            resolve(false);
+                                        }
+                                    );
+                                }
+                            },
+                            () => {
+                                console.error('检查权限失败');
+                                resolve(false);
+                            }
+                        );
+                    } else {
+                        // 非 Cordova 环境或权限插件不存在
+                        resolve(true);
+                    }
+                });
+            }
+
+            // 获取摄像头设备
+            async function getCameraDevices() {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    cameraDevices = devices.filter(device => device.kind === 'videoinput');
+                    console.log(`发现 ${cameraDevices.length} 个摄像头设备`);
+                    return cameraDevices.length > 0;
+                } catch (error) {
+                    console.error('获取摄像头设备失败:', error);
+                    showError('无法获取摄像头设备列表');
+                    return false;
+                }
+            }
+
+            // 启动摄像头
+            // 修改后的 startCamera 函数
+            async function startCamera() {
+                try {
+                    console.log('🔄 尝试启动摄像头...');
+        
+                    // 停止当前流
+                    if (currentStream) {
+                        currentStream.getTracks().forEach(track => track.stop());
+                        currentStream = null;
+                    }
+
+                    // 重新获取设备列表
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    cameraDevices = devices.filter(device => device.kind === 'videoinput');
+                    console.log(`✅ 发现 ${cameraDevices.length} 个摄像头设备`);
+                    document.getElementById('switchCameraBtn').disabled = cameraDevices.length <= 1;
+
+                    // 构建约束条件
+                    const constraints = {
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                        },
+                        audio: false
+                    };
+
+                    // 判断当前使用的是前置还是后置摄像头
+                    let isFrontCamera = true; // 默认前置
+                    
+                    if (cameraDevices.length > 1) {
+                        isFrontCamera = currentCameraIndex === 0;
+                        constraints.video.facingMode = isFrontCamera ? 'user' : 'environment';
+                    }
+
+                    console.log('尝试获取摄像头流，约束条件:', constraints);
+                    console.log('当前使用摄像头:', isFrontCamera ? '前置' : '后置');
+
+                    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    videoElement.srcObject = currentStream;
+
+                    // 根据摄像头类型设置镜像效果
+                    if (isFrontCamera) {
+                        // 前置摄像头：应用反向镜像来显示真实画面
+                        videoElement.style.transform = 'scaleX(-1)';
+                        videoElement.style.webkitTransform = 'scaleX(-1)';
+                    } else {
+                        // 后置摄像头：通常不需要镜像
+                        videoElement.style.transform = 'scaleX(1)';
+                        videoElement.style.webkitTransform = 'scaleX(1)';
+                    }
+
+                    await new Promise((resolve, reject) => {
+                        videoElement.onloadedmetadata = () => {
+                            videoElement.play().then(resolve).catch(reject);
+                            resetZoom();
+                        };
+                        videoElement.onerror = reject;
+                        setTimeout(() => reject(new Error('视频加载超时')), 10000);
+                    });
+
+                    console.log('✅ 摄像头启动成功，镜像修复完成');
+                    console.log('镜像状态:', isFrontCamera ? '前置摄像头已修复镜像' : '后置摄像头正常显示');
+
+                    // 初始化缩放控件
+                    initZoomControls();
+
+                } catch (error) {
+                    console.error('启动摄像头失败:', error);
+                    let errorMsg = '启动摄像头失败: ';
+                    switch (error.name) {
+                        case 'NotAllowedError':
+                            errorMsg += '权限被拒绝，请允许访问摄像头';
+                            break;
+                        case 'NotFoundError':
+                            errorMsg += '未找到摄像头设备';
+                            break;
+                        case 'NotReadableError':
+                            errorMsg += '摄像头被其他应用占用或硬件错误';
+                            break;
+                        case 'OverconstrainedError':
+                            errorMsg += '摄像头参数配置有误，请尝试更低的分辨率';
+                            break;
+                        case 'SecurityError':
+                            errorMsg += '安全限制，请使用HTTPS';
+                            break;
+                        default:
+                            errorMsg += error.message || '未知错误';
+                    }
+                    showError(errorMsg);
+                }
+            }
+
+            // 切换摄像头
+            document.getElementById('switchCameraBtn').addEventListener('click', async () => {
+                if (cameraDevices.length > 1) {
+                    currentCameraIndex = (currentCameraIndex + 1) % cameraDevices.length;
+                    console.log(`切换到摄像头 ${currentCameraIndex + 1}/${cameraDevices.length}`);
+
+                    // 重置缩放
+                    resetZoom();
+
+                    await startCamera();
+                } else {
+                    showError('只有一个摄像头设备可用');
+                }
+            });
+
+            // 返回AI语音界面
+            document.getElementById('backToVoiceBtn').addEventListener('click', () => {
+                stopCallConversation(); 
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+                if (window.StatusBar) {
+                    StatusBar.backgroundColorByHexString('#ffffff');
+                    StatusBar.overlaysWebView(false);
+                    StatusBar.show();
+                }
+                window.location.href = 'phone_call.html';
+            });
+
+            // 结束通话返回主界面
+            document.getElementById('endCallBtn').addEventListener('click', () => {
+                stopCallConversation(); 
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+                if (window.StatusBar) {
+                    StatusBar.backgroundColorByHexString('#ffffff');
+                    StatusBar.overlaysWebView(false);
+                    StatusBar.show();
+                }
+                window.location.href = 'index.html';
+            });
+
+            // 页面卸载时清理
+            window.addEventListener('beforeunload', () => {
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+            });
+
+            // 启动摄像头
+            startCamera();
+        }
+
+        // 屏幕方向控制
+        function lockOrientation(orientation) {
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock(orientation).then(() => {
+                    console.log(`屏幕方向已锁定为 ${orientation}`);
+                }).catch(err => {
+                    console.error('锁定屏幕方向失败:', err);
+                });
+            } else {
+                console.warn('设备不支持屏幕方向锁定');
+            }
+        }
+
+        // 在页面加载后立即调用，将屏幕锁定为横屏
+        window.addEventListener('load', () => {
+            lockOrientation('landscape');
+        });
+
+        // 当您从视频通话界面返回时，需要解锁屏幕方向
+        window.addEventListener('beforeunload', () => {
+            if (screen.orientation && screen.orientation.unlock) {
+                screen.orientation.unlock();
+                console.log('屏幕方向已解锁');
+            }
+        });
+        
+        // 转换为16位PCM
+        function floatTo16BitPCM(float32Array) {
+            const buffer = new ArrayBuffer(float32Array.length * 2);
+            const view = new DataView(buffer);
+            let offset = 0;
+            for (let i = 0; i < float32Array.length; i++, offset += 2) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+                view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+            return new Int16Array(buffer);
+        }
+
+        // 创建WAV文件
+        function createWAVFile(audioData, sampleRate) {
+            const length = audioData.length;
+            const buffer = new ArrayBuffer(44 + length * 2);
+            const view = new DataView(buffer);
+            
+            // WAV文件头
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+            
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, length * 2, true);
+            
+            // 写入音频数据
+            let offset = 44;
+            for (let i = 0; i < audioData.length; i++) {
+                view.setInt16(offset, audioData[i], true);
+                offset += 2;
+            }
+            
+            return buffer;
+        }
+
+         // 调用ASR API
+        async function performASR(audioFilePath) {
+            try {
+                console.log('Starting ASR with filePath:', audioFilePath);
+                const audioFile = await readAudioFile(audioFilePath);
+                
+                if (!(audioFile instanceof Blob)) {
+                throw new Error('Invalid audio file: not a Blob or File object');
+                }
+
+                const formData = new FormData();
+                formData.append('audio', audioFile, 'recording.wav');
+                console.log('FormData prepared, audioFile size:', audioFile.size, 'type:', audioFile.type);
+
+                // 调用ASR API
+                const response = await fetch(`${SERVER_URL}/asr`, {
+                method: 'POST',
+                body: formData
+                });
+
+                if (!response.ok) {
+                throw new Error(`ASR API request failed: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                throw new Error(result.error || 'ASR processing failed');
+                }
+
+                // 根据API返回格式获取识别结果
+                return result.transcription || '';
+
+            } catch (error) {
+                console.error('ASR调用失败:', error);
+                return '';
+            }
+        }
+
+        // 读取音频文件（用于发送到ASR API）
+        function readAudioFile(filePath) {
+            return new Promise((resolve, reject) => {
+                console.log('Resolving file system URL:', filePath);
+                window.resolveLocalFileSystemURL(filePath, (fileEntry) => {
+                console.log('File entry resolved:', fileEntry.name);
+                fileEntry.file(
+                    (file) => {
+                    console.log('File loaded (raw):', {
+                        name: file.name,
+                        size: file.size,
+                        type: file.type,
+                        isFile: file instanceof File,
+                        isBlob: file instanceof Blob
+                    });
+
+                    // 使用 FileReader 读取文件内容并创建 Blob
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const arrayBuffer = reader.result;
+                        const blob = new Blob([arrayBuffer], { type: file.type || 'audio/wav' });
+                        console.log('Converted to Blob:', {
+                        size: blob.size,
+                        type: blob.type,
+                        isBlob: blob instanceof Blob
+                        });
+                        resolve(blob);
+                    };
+                    reader.onerror = (error) => {
+                        console.error('FileReader error:', error);
+                        reject(new Error('Failed to read file content: ' + error.message));
+                    };
+                    reader.readAsArrayBuffer(file);
+                    },
+                    (error) => {
+                    console.error('Failed to read file:', error);
+                    reject(new Error('Failed to read audio file: ' + error.message));
+                    }
+                );
+                }, (error) => {
+                console.error('Invalid file path:', filePath, error);
+                reject(new Error('Invalid file path: ' + error.message));
+                });
+            });
+        }
+        
+        function simulateLive2DClick()   {
+            const live2dContainer = document.getElementById('live2d-container');
+            const canvas = live2dContainer ? live2dContainer.querySelector('canvas') : document.querySelector('canvas');
+            
+            if (!canvas) {
+                console.warn('未找到Live2D画布元素');
+                return false;
+            }
+            
+            const rect = canvas.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            // 更完整的事件序列
+            const events = [
+                // 触摸开始
+                new TouchEvent('touchstart', {
+                bubbles: true,
+                cancelable: true,
+                touches: [new Touch({
+                    identifier: 0,
+                    target: canvas,
+                    clientX: centerX,
+                    clientY: centerY,
+                    pageX: centerX + window.pageXOffset,
+                    pageY: centerY + window.pageYOffset,
+                    screenX: centerX,
+                    screenY: centerY,
+                    radiusX: 1,
+                    radiusY: 1,
+                    rotationAngle: 0,
+                    force: 1
+                })]
+                }),
+                
+                // 鼠标按下
+                new MouseEvent('mousedown', {
+                bubbles: true,
+                cancelable: true,
+                clientX: centerX,
+                clientY: centerY,
+                button: 0,
+                buttons: 1
+                }),
+                
+                // 触摸结束
+                new TouchEvent('touchend', {
+                bubbles: true,
+                cancelable: true,
+                changedTouches: [new Touch({
+                    identifier: 0,
+                    target: canvas,
+                    clientX: centerX,
+                    clientY: centerY,
+                    pageX: centerX + window.pageXOffset,
+                    pageY: centerY + window.pageYOffset,
+                    screenX: centerX,
+                    screenY: centerY
+                })]
+                }),
+                
+                // 鼠标抬起
+                new MouseEvent('mouseup', {
+                bubbles: true,
+                cancelable: true,
+                clientX: centerX,
+                clientY: centerY,
+                button: 0
+                }),
+                
+                // 点击事件
+                new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                clientX: centerX,
+                clientY: centerY,
+                button: 0
+                }),
+                
+                // 指针事件
+                new PointerEvent('pointerdown', {
+                bubbles: true,
+                cancelable: true,
+                clientX: centerX,
+                clientY: centerY,
+                pointerId: 1,
+                pointerType: 'touch'
+                }),
+                
+                new PointerEvent('pointerup', {
+                bubbles: true,
+                cancelable: true,
+                clientX: centerX,
+                clientY: centerY,
+                pointerId: 1,
+                pointerType: 'touch'
+                })
+            ];
+            
+            // 依次触发所有事件
+            events.forEach((event, index) => {
+                setTimeout(() => {
+                canvas.dispatchEvent(event);
+                }, index * 10); // 每个事件间隔10ms
+            });
+            
+            console.log(`模拟完整点击序列: (${centerX}, ${centerY})`);
+            return true;
+        }
+        // ========== 通话状态管理 ==========
+        class CallManager {
+            constructor() {
+                this.isCallActive = false;
+                this.isProcessing = false;
+                this.mediaRecorder = null;
+                this.audioStream = null;
+                this.audioContext = null;
+                this.vadCheckInterval = null;
+                this.silenceTimer = null;
+                this.audioChunks = [];
+                this.conversationHistory = [];
+                this.analyser = null;
+                this.hasDetectedSpeech = false; // 新增：标记是否检测到过语音
+                
+                // 配置参数
+                this.SILENCE_THRESHOLD = -20; // 静音阈值（分贝）
+                this.SILENCE_DURATION = 50; // 静音持续时间（毫秒）
+                this.SPEECH_THRESHOLD = -15; // 语音检测阈值（分贝）
+
+                this.capturedImages = []; // 存储截图的全局变量列表
+                this.maxImages = 1; // 最多存储5张图片
+                this.captureInterval = null; // 新增：截图定时器
+                this.captureFrequency = 100; // 新增：截图频率，每500ms截一张
+            }
+
+            // 重置所有状态
+            reset() {
+                this.isCallActive = false;
+                this.isProcessing = false;
+                this.hasDetectedSpeech = false;
+                this.audioChunks = [];
+                this.conversationHistory = [];
+                
+                // 清理定时器
+                if (this.vadCheckInterval) {
+                clearInterval(this.vadCheckInterval);
+                this.vadCheckInterval = null;
+                }
+                if (this.silenceTimer) {
+                clearTimeout(this.silenceTimer);
+                this.silenceTimer = null;
+                }
+                
+                // 停止录音
+                if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                this.mediaRecorder.stop();
+                }
+                this.mediaRecorder = null;
+                
+                // 关闭音频流
+                if (this.audioStream) {
+                this.audioStream.getTracks().forEach(track => track.stop());
+                this.audioStream = null;
+                }
+                
+                // 关闭音频上下文
+                if (this.audioContext && this.audioContext.state !== 'closed') {
+                this.audioContext.close();
+                this.audioContext = null;
+                }
+                
+                this.analyser = null;
+
+                this.capturedImages = []; // 清空图片列表
+        
+                // 清除截图定时器
+                if (this.captureInterval) {
+                    clearInterval(this.captureInterval);
+                    this.captureInterval = null;
+                }
+            }
+
+            // 截图方法（保持不变）
+            captureCurrentFrame() {
+                try {
+                    const videoElement = document.getElementById('cameraVideo');
+                    if (!videoElement || videoElement.videoWidth === 0) {
+                        console.warn('摄像头视频流无效，无法截图');
+                        return null;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    canvas.width = videoElement.videoWidth;
+                    canvas.height = videoElement.videoHeight;
+                    
+                    ctx.drawImage(videoElement, 0, 0);
+                    
+                    const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+                    
+                    this.capturedImages.push(base64Image);
+                    if (this.capturedImages.length > this.maxImages) {
+                        this.capturedImages.shift();
+                    }
+                    
+                    console.log(`截图成功，当前存储 ${this.capturedImages.length} 张图片`);
+                    return base64Image;
+                    
+                } catch (error) {
+                    console.error('截图失败:', error);
+                    return null;
+                }
+            }
+
+            // 新增：开始连续截图
+            startCapturing() {
+                if (this.captureInterval) {
+                    return; // 已经在截图中
+                }
+                
+                console.log('开始连续截图');
+                this.captureInterval = setInterval(() => {
+                    if (this.isCallActive) {
+                        this.captureCurrentFrame();
+                    } else {
+                        this.stopCapturing();
+                    }
+                }, this.captureFrequency);
+            }
+
+            // 新增：停止连续截图
+            stopCapturing() {
+                if (this.captureInterval) {
+                    console.log('停止连续截图');
+                    clearInterval(this.captureInterval);
+                    this.captureInterval = null;
+                }
+            }
+
+            // 检查通话是否处于活动状态
+            isActive() {
+                return this.isCallActive;
+            }
+
+            // 开始通话
+            async start() {
+                if (this.isCallActive) {
+                console.warn('通话已经在进行中');
+                return;
+                }
+
+                this.reset(); // 确保状态干净
+                this.isCallActive = true;
+                
+                const callStatus = document.getElementById('call-status');
+                const callMessagesContainer = document.getElementById('call-messages-container');
+
+                // 清空之前的对话
+                callMessagesContainer.innerHTML = '';
+
+                try {
+                // this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                this.audioStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
+                });
+                await this.initializeAudioProcessing();
+                this.startListening();
+                } catch (error) {
+                console.error('获取麦克风失败:', error);
+                alert('无法启用麦克风，请检查权限设置。');
+                this.reset();
+                exitCallPage();
+                }
+            }
+
+            // 停止通话
+            stop() {
+                console.log('停止通话');
+                this.reset();
+                
+                const callStatus = document.getElementById('call-status');
+                callStatus.style.display = 'none';
+            }
+
+            // 初始化音频处理
+            async initializeAudioProcessing() {
+                // this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: 16000
+                });
+                
+                // 设置音频分析
+                const source = this.audioContext.createMediaStreamSource(this.audioStream);
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 256;
+                source.connect(this.analyser);
+            }
+
+            // 开始监听
+            startListening() {
+                if (!this.isCallActive || this.isProcessing) {
+                return;
+                }
+
+                console.log('开始监听...');
+                const callStatus = document.getElementById('call-status');
+                
+                // 重置状态
+                this.audioChunks = [];
+                this.hasDetectedSpeech = false;
+                this.capturedImages = []; // 清空之前的图片，为新一轮对话做准备
+
+                // 设置录音器选项
+                // 设置MediaRecorder
+                const options = {
+                    mimeType: 'audio/webm;codecs=opus'
+                };
+                
+                // 检查浏览器支持的格式
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options.mimeType = 'audio/webm';
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                        options.mimeType = 'audio/mp4';
+                        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                            delete options.mimeType;
+                        }
+                    }
+                }
+
+                this.mediaRecorder = new MediaRecorder(this.audioStream, options);
+
+                this.mediaRecorder.ondataavailable = event => {
+                    if (this.isCallActive && event.data && event.data.size > 0) {
+                        console.log(`收到音频数据块: ${event.data.size} bytes`);
+                        this.audioChunks.push(event.data);
+                    }
+                };
+
+                this.mediaRecorder.onstart = () => {
+                    if (!this.isCallActive) return;
+                    console.log('录音开始...');
+                    callStatus.textContent = '等待语音输入...';
+                    callStatus.style.display = 'block';
+                };
+
+                this.mediaRecorder.onstop = async () => {
+                    if (!this.isCallActive) return;
+                    console.log('录音结束');
+
+                    // 确保停止截图
+                    this.stopCapturing();
+                    
+                    // 只有当检测到语音且有音频数据时才处理
+                    if (this.hasDetectedSpeech && this.audioChunks.length > 0) {
+                        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                        const audioFile = new File([audioBlob], "recording.wav", { type: "audio/wav" });
+                        
+                        if (audioFile.size > -1) { // 确保音频文件不为空（至少1KB）
+                        console.log('检测到有效语音，开始处理...');
+                        await this.processAudio();
+                        } else {
+                        console.log('音频文件太小，跳过处理');
+                        this.restartListening();
+                        }
+                    } else {
+                        console.log('未检测到语音或无音频数据，重新开始监听');
+                        this.restartListening();
+                    }
+                };
+
+                // 启动录音
+                this.mediaRecorder.start();
+                
+                // 启动语音活动检测
+                this.startVAD();
+            }
+
+            // 启动语音活动检测（VAD）
+            startVAD() {
+                if (!this.analyser || !this.isCallActive) {
+                return;
+                }
+
+                const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+                const callStatus = document.getElementById('call-status');
+
+                const checkAudio = () => {
+                if (!this.isCallActive || !this.mediaRecorder || 
+                    this.mediaRecorder.state !== 'recording' || this.isProcessing) {
+                    return;
+                }
+
+                this.analyser.getByteFrequencyData(dataArray);
+                let sum = dataArray.reduce((a, b) => a + b, 0);
+                let average = sum / dataArray.length;
+                let decibels = 20 * Math.log10(average / 255);
+
+                // 检测到语音（音量高于语音阈值）
+                if (decibels > this.SPEECH_THRESHOLD) {
+                    if (!this.hasDetectedSpeech) {
+                        console.log(`检测到语音开始: ${decibels.toFixed(2)} dB`);
+                        this.hasDetectedSpeech = true;
+                        callStatus.textContent = '正在聆听...';
+
+                        // 开始连续截图
+                        this.startCapturing();
+                    }
+                    
+                    // 清除静音计时器
+                    if (this.silenceTimer) {
+                        clearTimeout(this.silenceTimer);
+                        this.silenceTimer = null;
+                    }
+                } 
+                // 检测到静音（音量低于静音阈值）且之前检测到过语音
+                else if (decibels < this.SILENCE_THRESHOLD && this.hasDetectedSpeech) {
+                    if (!this.silenceTimer) {
+                        console.log(`检测到静音开始: ${decibels.toFixed(2)} dB`);
+                        this.silenceTimer = setTimeout(() => {
+                            console.log('静音持续足够长时间，结束录音');
+                            this.finishRecording();
+
+                            // 停止连续截图
+                            this.stopCapturing();
+                        }, this.SILENCE_DURATION);
+                    }
+                }
+                };
+
+                // 清除之前的定时器
+                if (this.vadCheckInterval) {
+                clearInterval(this.vadCheckInterval);
+                }
+                
+                // 每100毫秒检查一次
+                this.vadCheckInterval = setInterval(checkAudio, 100);
+            }
+
+            // 结束当前录音
+            finishRecording() {
+                if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                console.log('停止录音...');
+                this.mediaRecorder.stop();
+                }
+                
+                // 清理VAD
+                if (this.vadCheckInterval) {
+                clearInterval(this.vadCheckInterval);
+                this.vadCheckInterval = null;
+                }
+                if (this.silenceTimer) {
+                clearTimeout(this.silenceTimer);
+                this.silenceTimer = null;
+                }
+            }
+
+            // 重新开始监听
+            restartListening() {
+                if (!this.isCallActive) return;
+                
+                setTimeout(() => {
+                if (this.isCallActive && !this.isProcessing) {
+                    this.startListening();
+                }
+                }, 500);
+            }
+
+            // 处理音频
+            async processAudio() {
+                if (!this.isCallActive) return;
+                
+                this.isProcessing = true;
+                const callStatus = document.getElementById('call-status');
+
+                try {
+                // 1. 保存音频文件到本地
+                callStatus.textContent = '正在处理录音...';
+
+                // 创建音频blob
+                const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                
+                // 转换为ArrayBuffer
+                const arrayBuffer = await audioBlob.arrayBuffer();
+                
+                // 解码音频数据
+                const audioBufferObj = await this.audioContext.decodeAudioData(arrayBuffer);
+                
+                // 确保是16kHz单声道
+                const targetSampleRate = 16000;
+                let audioData = audioBufferObj.getChannelData(0);
+                
+                // 如果采样率不是16kHz，进行重采样
+                if (audioBufferObj.sampleRate !== targetSampleRate) {
+                    audioData = downsampleBuffer(audioData, audioBufferObj.sampleRate, targetSampleRate);
+                }
+                
+                // 转换为16位PCM
+                const int16Data = floatTo16BitPCM(audioData);
+                
+                // 创建WAV文件
+                const wavBuffer = createWAVFile(int16Data, targetSampleRate);
+
+                const audioFilePath = await this.saveAudioFile(wavBuffer);
+
+                // 2. ASR (语音识别)
+                callStatus.textContent = '正在识别...';
+
+                const asrResult =await performASR(audioFilePath)
+                // const asrResult = "请回答我5个字"
+                
+                if (!this.isCallActive) return; // 检查状态
+                
+                if (asrResult && asrResult.trim()) {
+                    console.log('识别结果:', asrResult);
+                    this.displayMessage(asrResult, 'user');
+
+                    // 2. LLM (大模型)
+                    callStatus.textContent = '思考中...';
+                    const llmResponse = await this.getLlmResponse(asrResult);
+                    // const llmResponse = "这是AI的测试回复内容"; // 临时测试用
+                    
+                    if (!this.isCallActive) return; // 检查状态
+                    
+                    if (llmResponse && llmResponse.trim()) {
+                        // 3. TTS (文本转语音)
+                        const tts_success = await this.getTTSWav(llmResponse)
+                        
+                        if (!this.isCallActive) return; // 检查状态
+                        
+                        console.log('AI 回复:', llmResponse);
+                        this.displayMessage(llmResponse, 'bot');
+
+                        simulateLive2DClick();   
+                    }
+                } else {
+                    console.log('没有识别到有效内容');
+                }
+                
+                } catch (error) {
+                console.error('处理音频时出错:', error);
+                } finally {
+                if (this.isCallActive) {
+                    this.isProcessing = false;
+                    callStatus.style.display = 'none';
+                    this.restartListening();
+                }
+                }
+            }
+
+            // 保存音频文件到Cordova文件系统
+            async saveAudioFile(wavBuffer) {
+                return new Promise((resolve, reject) => {
+                if (!window.cordova || !window.cordova.file) {
+                    reject(new Error('Cordova file plugin not available'));
+                    return;
+                }
+
+                window.resolveLocalFileSystemURL(cordova.file.dataDirectory, (dirEntry) => {
+                    dirEntry.getDirectory('audio_temp', { create: true }, (chatWavDir) => {
+                    const fileName = `recording.wav`;
+                    // 创建文件
+                    chatWavDir.getFile(fileName, { create: true }, (fileEntry) => {
+                        // 写入文件
+                        fileEntry.createWriter((fileWriter) => {
+                        fileWriter.onwriteend = () => {
+                            console.log('音频文件保存成功:', fileEntry.nativeURL);
+                            resolve(fileEntry.nativeURL);
+                        };
+                        
+                        fileWriter.onerror = (e) => {
+                            console.error('文件写入失败:', e);
+                            reject(e);
+                        };
+                        
+                        // 将ArrayBuffer转换为Blob
+                        const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+                        fileWriter.write(blob);
+                        });
+                    }, reject);
+                    }, reject);
+                }, reject);
+                });
+            }
+
+            // 显示消息
+            displayMessage(text, role) {
+                const container = document.getElementById('call-messages-container');
+                const messageEl = document.createElement('div');
+                messageEl.className = `call-message ${role}`;
+                
+                if(role === 'user') {
+                    messageEl.textContent = '我：'+text;; // 直接显示用户内容
+                } else {
+                    messageEl.textContent = '02：'+text; // 直接显示AI内容
+                }
+                
+                container.appendChild(messageEl);
+
+                // 自动滚动到底部
+                container.scrollTop = container.scrollHeight;
+
+                // 60秒后淡出消失
+                setTimeout(() => {
+                    messageEl.classList.add('fade-out');
+                    setTimeout(() => {
+                        if (container.contains(messageEl)) {
+                            container.removeChild(messageEl);
+                        }
+                    }, 500);
+                }, 60000);
+            }
+
+            async getLlmResponse(text) {
+                if (!this.isCallActive) return null;
+                
+                this.conversationHistory.push({ role: 'user', content: text, files_path: this.capturedImages.slice() });
+                try {
+                    const response = await fetch(`${SERVER_URL}/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: text, history: this.conversationHistory })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        this.conversationHistory.push({ role: 'assistant', content: data.response });
+                        return data.response;
+                    }
+                    return null;
+                } catch (error) {
+                    console.error('LLM 请求失败:', error);
+                    return null;
+                }
+            }
+
+            async getTtsAudio(text) {
+                if (!this.isCallActive) {
+                console.log('通话已停止，取消TTS请求');
+                return null;
+                }
+
+                try {
+                const response = await fetch(`${SERVER_URL}/tts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                return await response.blob();
+                } catch (error) {
+                console.error('TTS 请求失败:', error);
+                return null;
+                }
+            }
+
+            async getTTSWav(text) {
+                // const serverUrl = "https://121.43.116.49:5000/tts"; // 换成你的服务器地址
+                const serverUrl = `${SERVER_URL}/tts`;
+
+                try {
+                    const response = await fetch(serverUrl, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ text })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error("TTS请求失败: " + response.status);
+                    }
+
+                    // 获取 ArrayBuffer
+                    const arrayBuffer = await response.arrayBuffer();
+                    const blob = new Blob([arrayBuffer], { type: "audio/wav" });
+
+                    // 等待写入完成
+                    const filePath = await this.saveWavToFile(blob);
+                    console.log("下一步逻辑开始执行，本地文件路径:", filePath);
+
+                    return "audio.wav 已保存";
+                } catch (error) {
+                    console.error("调用TTS失败:", error);
+                    return "TTS失败";
+                }
+            }
+
+            async saveWavToFile(blob) {
+                return new Promise((resolve, reject) => {
+                    window.resolveLocalFileSystemURL(cordova.file.dataDirectory, function (dir) {
+                        dir.getFile("audio.wav", { create: true }, function (file) {
+                            file.createWriter(function (fileWriter) {
+                                fileWriter.onwriteend = function () {
+                                    console.log("✅ audio.wav 已保存到:", cordova.file.dataDirectory);
+                                    resolve(cordova.file.dataDirectory + "audio.wav");
+                                };
+                                fileWriter.onerror = function (e) {
+                                    console.error("保存失败:", e);
+                                    reject(e);
+                                };
+                                fileWriter.write(blob);
+                            }, reject);
+                        }, reject);
+                    }, reject);
+                });
+            }
+
+            async playAudioFromBlob(audioBlob) {
+                if (!this.isCallActive) return;
+                
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                
+                return new Promise(resolve => {
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    resolve();
+                };
+                audio.onerror = () => {
+                    console.error('音频播放失败');
+                    URL.revokeObjectURL(audioUrl);
+                    resolve();
+                };
+                
+                // 检查通话状态
+                if (this.isCallActive) {
+                    audio.play();
+                } else {
+                    URL.revokeObjectURL(audioUrl);
+                    resolve();
+                }
+                });
+            }
+        }
+
+        // ========== 全局实例 ==========
+        const callManager = new CallManager();
+
+        // ========== 导出的函数 ==========
+        async function startCallConversation() {
+            await callManager.start();
+        }
+
+        function stopCallConversation() {
+            callManager.stop();
+        }
+    </script>
+</body>
+</html>
