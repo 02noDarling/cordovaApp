@@ -112,7 +112,8 @@
             top: 50%;
             transform: translateY(-50%);
             width: 300px;
-            height: 60%;
+            height: 45%; /* 从60%减少到45% */
+            max-height: 400px; /* 添加最大高度限制 */
             overflow-y: auto;
             z-index: 4;
             display: flex;
@@ -183,13 +184,13 @@
         }
 
         .zoom-button {
-            width: 50px;
-            height: 50px;
+            width: 40px; /* 从50px减少到40px */
+            height: 40px; /* 从50px减少到40px */
             border: none;
             border-radius: 50%;
             background: rgba(255, 255, 255, 0.2);
             color: white;
-            font-size: 24px;
+            font-size: 20px; /* 从24px减少到20px */
             font-weight: bold;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -220,17 +221,17 @@
             transform: none;
         }
 
-        /* 缩放级别指示器 */
+        /* 调整缩放级别指示器位置 */
         #zoom-level-indicator {
             position: absolute;
-            bottom: 80px;
+            bottom: 70px; /* 从80px调整到70px */
             right: 20px;
             z-index: 5;
             background: rgba(0, 0, 0, 0.6);
             color: white;
-            padding: 8px 15px;
-            border-radius: 15px;
-            font-size: 14px;
+            padding: 6px 12px; /* 从8px 15px减少到6px 12px */
+            border-radius: 12px; /* 从15px减少到12px */
+            font-size: 12px; /* 从14px减少到12px */
             font-weight: bold;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -602,17 +603,54 @@
             async function startCamera() {
                 try {
                     console.log('🔄 尝试启动摄像头...');
-        
+
+                    // 首先请求权限
+                    const hasPermission = await requestCameraPermission();
+                    if (!hasPermission) {
+                        showError('摄像头权限被拒绝');
+                        return;
+                    }
+
                     // 停止当前流
                     if (currentStream) {
                         currentStream.getTracks().forEach(track => track.stop());
                         currentStream = null;
                     }
 
-                    // 重新获取设备列表
-                    const devices = await navigator.mediaDevices.enumerateDevices();
-                    cameraDevices = devices.filter(device => device.kind === 'videoinput');
-                    console.log(`✅ 发现 ${cameraDevices.length} 个摄像头设备`);
+                    // 强制多次枚举设备，直到找到所有摄像头
+                    let attempts = 0;
+                    const maxAttempts = 5;
+                    
+                    while (attempts < maxAttempts) {
+                        // 先请求一次媒体流来"激活"设备枚举
+                        try {
+                            const tempStream = await navigator.mediaDevices.getUserMedia({ 
+                                video: { facingMode: attempts % 2 === 0 ? 'user' : 'environment' } 
+                            });
+                            tempStream.getTracks().forEach(track => track.stop());
+                        } catch (e) {
+                            console.log(`尝试 ${attempts + 1}: 临时流获取失败，继续...`);
+                        }
+
+                        // 等待一段时间让设备信息更新
+                        await new Promise(resolve => setTimeout(resolve, 200));
+
+                        // 重新枚举设备
+                        const devices = await navigator.mediaDevices.enumerateDevices();
+                        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                        
+                        console.log(`尝试 ${attempts + 1}: 发现 ${videoDevices.length} 个摄像头设备`);
+                        
+                        // 如果发现多个设备或达到最大尝试次数，停止循环
+                        if (videoDevices.length > 1 || attempts === maxAttempts - 1) {
+                            cameraDevices = videoDevices;
+                            break;
+                        }
+                        
+                        attempts++;
+                    }
+
+                    console.log(`✅ 最终发现 ${cameraDevices.length} 个摄像头设备`);
                     document.getElementById('switchCameraBtn').disabled = cameraDevices.length <= 1;
 
                     // 构建约束条件
@@ -625,11 +663,16 @@
                     };
 
                     // 判断当前使用的是前置还是后置摄像头
-                    let isFrontCamera = true; // 默认前置
+                    let isFrontCamera = true;
                     
                     if (cameraDevices.length > 1) {
                         isFrontCamera = currentCameraIndex === 0;
-                        constraints.video.facingMode = isFrontCamera ? 'user' : 'environment';
+                        // 优先使用设备ID而不是facingMode
+                        if (cameraDevices[currentCameraIndex] && cameraDevices[currentCameraIndex].deviceId) {
+                            constraints.video.deviceId = { exact: cameraDevices[currentCameraIndex].deviceId };
+                        } else {
+                            constraints.video.facingMode = isFrontCamera ? 'user' : 'environment';
+                        }
                     }
 
                     console.log('尝试获取摄像头流，约束条件:', constraints);
@@ -640,11 +683,9 @@
 
                     // 根据摄像头类型设置镜像效果
                     if (isFrontCamera) {
-                        // 前置摄像头：应用反向镜像来显示真实画面
                         videoElement.style.transform = 'scaleX(-1)';
                         videoElement.style.webkitTransform = 'scaleX(-1)';
                     } else {
-                        // 后置摄像头：通常不需要镜像
                         videoElement.style.transform = 'scaleX(1)';
                         videoElement.style.webkitTransform = 'scaleX(1)';
                     }
