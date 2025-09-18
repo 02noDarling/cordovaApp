@@ -239,6 +239,39 @@
             transition: opacity 0.3s ease;
             pointer-events: none;
         }
+
+        /* 新增：提示对话框样式 */
+        #zoom-tip {
+            position: absolute;
+            bottom: 60px; /* 调整位置在缩放按钮上方 */
+            right: 20px;
+            z-index: 6;
+            background: rgba(255, 152, 0, 0.9); /* 橙色背景 */
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: bold;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+            white-space: nowrap; /* 防止文本换行 */
+        }
+
+        /* 提示框的小尾巴 */
+        #zoom-tip::after {
+            content: '';
+            position: absolute;
+            right: 18px; /* 调整位置指向+号按钮 */
+            bottom: -10px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 10px solid rgba(255, 152, 0, 0.9);
+        }
     </style>
     <!-- Live2DCubismCore script -->
     <script src="./Core/live2dcubismcore.js"></script>
@@ -262,17 +295,13 @@
             <button id="zoom-in-btn" class="zoom-button">+</button>
         </div>
         <div id="zoom-level-indicator">1.0x</div>
+        <div id="zoom-tip">长按缩放哦</div> ```
         <div id="error-message"></div>
     </div>
 
     <!-- 通话页面 -->
     <div id="call-page">
         <div id="call-avatar-container">
-            <p id="call-timer" style="
-                color: white;
-                font-size: 20px;
-                font-weight: bold;
-                margin-top: 10px;">00:00</p>
             <p id="call-status" style="
                 color: #4CAF50; 
                 font-weight: bold; 
@@ -694,6 +723,15 @@
                         videoElement.onloadedmetadata = () => {
                             videoElement.play().then(resolve).catch(reject);
                             resetZoom();
+
+                            // 在这里显示提示
+                            const zoomTip = document.getElementById('zoom-tip');
+                            if (zoomTip) {
+                                zoomTip.style.opacity = '1';
+                                setTimeout(() => {
+                                    zoomTip.style.opacity = '0';
+                                }, 3000); // 3秒后消失
+                            }
                         };
                         videoElement.onerror = reject;
                         setTimeout(() => reject(new Error('视频加载超时')), 10000);
